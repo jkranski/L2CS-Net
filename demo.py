@@ -2,6 +2,8 @@ import argparse
 import numpy as np
 import cv2
 import time
+import mido
+
 
 import torch
 import torch.nn as nn
@@ -96,10 +98,15 @@ if __name__ == '__main__':
     if not cap.isOpened():
         raise IOError("Cannot open webcam")
 
+    # Set up MIDI port
+    msg = mido.Message('note_on', note=60)
+    out_port = mido.open_output(mido.get_output_names()[0])
+    msg_changed = False
+
     with torch.no_grad():
         while True:
-            success, frame = cap.read()    
-            start_fps = time.time()  
+            success, frame = cap.read()
+            start_fps = time.time()
            
             faces = detector(frame)
             if faces is not None: 
@@ -142,16 +149,40 @@ if __name__ == '__main__':
                     # Get continuous predictions in degrees.
                     pitch_predicted = torch.sum(pitch_predicted.data[0] * idx_tensor) * 4 - 180
                     yaw_predicted = torch.sum(yaw_predicted.data[0] * idx_tensor) * 4 - 180
+
                     
                     pitch_predicted= pitch_predicted.cpu().detach().numpy()* np.pi/180.0
                     yaw_predicted= yaw_predicted.cpu().detach().numpy()* np.pi/180.0
 
-                
+                    # Check for gaze direction
+                    #Seems to have pitch and yaw swapped. Pitch here is the left/right gaze of the viewer
+                    left_right_gaze = pitch_predicted*180.0/np.pi
+                    # TODO: Add np.bin usage here
+                    # Added in some dead bands
+                    if left_right_gaze < -20.0:
+                        note_tone = 20
+                    elif -15. < left_right_gaze < -2.5:
+                        note_tone = 40
+                    elif 2.5 < left_right_gaze < 15.:
+                        note_tone = 60
+                    elif left_right_gaze > 20.0:
+                        note_tone = 80
+                    else:
+                        note_tone = msg.note
+                    if note_tone != msg.note:
+                        msg = msg.copy(note=note_tone)
+                        msg_changed = True
                     
                     draw_gaze(x_min,y_min,bbox_width, bbox_height,frame,(pitch_predicted,yaw_predicted),color=(0,0,255))
                     cv2.rectangle(frame, (x_min, y_min), (x_max, y_max), (0,255,0), 1)
+
+            if msg_changed:
+                out_port.send(msg)
+                msg_changed = False
             myFPS = 1.0 / (time.time() - start_fps)
             cv2.putText(frame, 'FPS: {:.1f}'.format(myFPS), (10, 20),cv2.FONT_HERSHEY_COMPLEX_SMALL, 1, (0, 255, 0), 1, cv2.LINE_AA)
+            cv2.putText(frame, 'Pitch: {:.1f}'.format(pitch_predicted*180./np.pi), (10, 70),cv2.FONT_HERSHEY_COMPLEX_SMALL, 1, (0, 255, 0), 1, cv2.LINE_AA)
+            cv2.putText(frame, 'Yaw: {:.1f}'.format(yaw_predicted*180./np.pi), (10, 120),cv2.FONT_HERSHEY_COMPLEX_SMALL, 1, (0, 255, 0), 1, cv2.LINE_AA)
 
             cv2.imshow("Demo",frame)
             if cv2.waitKey(1) & 0xFF == 27:
