@@ -2,7 +2,6 @@ import argparse
 import numpy as np
 import cv2
 import time
-import mido
 
 
 import torch
@@ -18,6 +17,7 @@ from PIL import Image, ImageOps
 
 from face_detection import RetinaFace
 from model import L2CS
+from wlf import GazeData, GazeSender
 
 
 def parse_args():
@@ -66,8 +66,6 @@ if __name__ == '__main__':
     cam = args.cam_id
     gpu = select_device(args.gpu_id, batch_size=batch_size)
     snapshot_path = args.snapshot
-   
-    
 
     transformations = transforms.Compose([
         transforms.Resize(448),
@@ -98,94 +96,96 @@ if __name__ == '__main__':
     if not cap.isOpened():
         raise IOError("Cannot open webcam")
 
-    # Set up MIDI port
-    msg = mido.Message('note_on', note=60)
-    out_port = mido.open_output(mido.get_output_names()[0])
-    msg_changed = False
+    # Connect to the gaze server
+    gaze_sender = GazeSender()
 
-    with torch.no_grad():
-        while True:
-            success, frame = cap.read()
-            start_fps = time.time()
-           
-            faces = detector(frame)
-            if faces is not None: 
-                for box, landmarks, score in faces:
-                    if score < .95:
-                        continue
-                    x_min=int(box[0])
-                    if x_min < 0:
-                        x_min = 0
-                    y_min=int(box[1])
-                    if y_min < 0:
-                        y_min = 0
-                    x_max=int(box[2])
-                    y_max=int(box[3])
-                    bbox_width = x_max - x_min
-                    bbox_height = y_max - y_min
-                    # x_min = max(0,x_min-int(0.2*bbox_height))
-                    # y_min = max(0,y_min-int(0.2*bbox_width))
-                    # x_max = x_max+int(0.2*bbox_height)
-                    # y_max = y_max+int(0.2*bbox_width)
-                    # bbox_width = x_max - x_min
-                    # bbox_height = y_max - y_min
+    try:
+        with torch.no_grad():
+            while True:
+                success, frame = cap.read()
+                start_fps = time.time()
+            
+                faces = detector(frame)
+                gaze_data = GazeData()
+                if faces is not None: 
+                    
+                    for box, landmarks, score in faces:
+                        if score < .95:
+                            continue
+                        x_min=int(box[0])
+                        if x_min < 0:
+                            x_min = 0
+                        y_min=int(box[1])
+                        if y_min < 0:
+                            y_min = 0
+                        x_max=int(box[2])
+                        y_max=int(box[3])
+                        bbox_width = x_max - x_min
+                        bbox_height = y_max - y_min
+                        # x_min = max(0,x_min-int(0.2*bbox_height))
+                        # y_min = max(0,y_min-int(0.2*bbox_width))
+                        # x_max = x_max+int(0.2*bbox_height)
+                        # y_max = y_max+int(0.2*bbox_width)
+                        # bbox_width = x_max - x_min
+                        # bbox_height = y_max - y_min
 
-                    # Crop image
-                    img = frame[y_min:y_max, x_min:x_max]
-                    img = cv2.resize(img, (224, 224))
-                    img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-                    im_pil = Image.fromarray(img)
-                    img=transformations(im_pil)
-                    img  = Variable(img).cuda(gpu)
-                    img  = img.unsqueeze(0) 
-                    
-                    # gaze prediction
-                    gaze_pitch, gaze_yaw = model(img)
-                    
-                    
-                    pitch_predicted = softmax(gaze_pitch)
-                    yaw_predicted = softmax(gaze_yaw)
-                    
-                    # Get continuous predictions in degrees.
-                    pitch_predicted = torch.sum(pitch_predicted.data[0] * idx_tensor) * 4 - 180
-                    yaw_predicted = torch.sum(yaw_predicted.data[0] * idx_tensor) * 4 - 180
+                        # Crop image
+                        img = frame[y_min:y_max, x_min:x_max]
+                        img = cv2.resize(img, (224, 224))
+                        img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+                        im_pil = Image.fromarray(img)
+                        img=transformations(im_pil)
+                        img  = Variable(img).cuda(gpu)
+                        img  = img.unsqueeze(0) 
+                        
+                        # gaze prediction
+                        gaze_pitch, gaze_yaw = model(img)
+                        
+                        
+                        pitch_predicted = softmax(gaze_pitch)
+                        yaw_predicted = softmax(gaze_yaw)
+                        
+                        # Get continuous predictions in degrees.
+                        pitch_predicted = torch.sum(pitch_predicted.data[0] * idx_tensor) * 4 - 180
+                        yaw_predicted = torch.sum(yaw_predicted.data[0] * idx_tensor) * 4 - 180
 
-                    
-                    pitch_predicted= pitch_predicted.cpu().detach().numpy()* np.pi/180.0
-                    yaw_predicted= yaw_predicted.cpu().detach().numpy()* np.pi/180.0
+                        
+                        pitch_predicted= pitch_predicted.cpu().detach().numpy()* np.pi/180.0
+                        yaw_predicted= yaw_predicted.cpu().detach().numpy()* np.pi/180.0
 
-                    # Check for gaze direction
-                    #Seems to have pitch and yaw swapped. Pitch here is the left/right gaze of the viewer
-                    left_right_gaze = pitch_predicted*180.0/np.pi
-                    # TODO: Add np.bin usage here
-                    # Added in some dead bands
-                    if left_right_gaze < -20.0:
-                        note_tone = 20
-                    elif -15. < left_right_gaze < -2.5:
-                        note_tone = 40
-                    elif 2.5 < left_right_gaze < 15.:
-                        note_tone = 60
-                    elif left_right_gaze > 20.0:
-                        note_tone = 80
-                    else:
-                        note_tone = msg.note
-                    if note_tone != msg.note:
-                        msg = msg.copy(note=note_tone)
-                        msg_changed = True
-                    
-                    draw_gaze(x_min,y_min,bbox_width, bbox_height,frame,(pitch_predicted,yaw_predicted),color=(0,0,255))
-                    cv2.rectangle(frame, (x_min, y_min), (x_max, y_max), (0,255,0), 1)
+                        # Check for gaze direction
+                        #Seems to have pitch and yaw swapped. Pitch here is the left/right gaze of the viewer
+                        left_right_gaze = pitch_predicted*180.0/np.pi
+                        
+                        # TODO: Add np.bin usage here
+                        # Added in some dead bands
+                        if left_right_gaze < -20.0:
+                            gaze_data.column_counts[0] += 1
+                        elif -15. < left_right_gaze < -2.5:
+                            gaze_data.column_counts[1] += 1
+                        elif 2.5 < left_right_gaze < 15.:
+                            gaze_data.column_counts[2] += 1
+                        elif left_right_gaze > 20.0:
+                            gaze_data.column_counts[3] += 1
+                        
+                        draw_gaze(x_min,y_min,bbox_width, bbox_height,frame,(pitch_predicted,yaw_predicted),color=(0,0,255))
+                        cv2.rectangle(frame, (x_min, y_min), (x_max, y_max), (0,255,0), 1)
 
-            if msg_changed:
-                out_port.send(msg)
-                msg_changed = False
-            myFPS = 1.0 / (time.time() - start_fps)
-            cv2.putText(frame, 'FPS: {:.1f}'.format(myFPS), (10, 20),cv2.FONT_HERSHEY_COMPLEX_SMALL, 1, (0, 255, 0), 1, cv2.LINE_AA)
-            cv2.putText(frame, 'Pitch: {:.1f}'.format(pitch_predicted*180./np.pi), (10, 70),cv2.FONT_HERSHEY_COMPLEX_SMALL, 1, (0, 255, 0), 1, cv2.LINE_AA)
-            cv2.putText(frame, 'Yaw: {:.1f}'.format(yaw_predicted*180./np.pi), (10, 120),cv2.FONT_HERSHEY_COMPLEX_SMALL, 1, (0, 255, 0), 1, cv2.LINE_AA)
+                try:
+                    gaze_sender.send(gaze_data)
+                except Exception as e:
+                    print(f'Failed to send websocket message: {e}')
+                
+                myFPS = 1.0 / (time.time() - start_fps)
+                cv2.putText(frame, 'FPS: {:.1f}'.format(myFPS), (10, 20),cv2.FONT_HERSHEY_COMPLEX_SMALL, 1, (0, 255, 0), 1, cv2.LINE_AA)
+                cv2.putText(frame, 'Pitch: {:.1f}'.format(pitch_predicted*180./np.pi), (10, 70),cv2.FONT_HERSHEY_COMPLEX_SMALL, 1, (0, 255, 0), 1, cv2.LINE_AA)
+                cv2.putText(frame, 'Yaw: {:.1f}'.format(yaw_predicted*180./np.pi), (10, 120),cv2.FONT_HERSHEY_COMPLEX_SMALL, 1, (0, 255, 0), 1, cv2.LINE_AA)
 
-            cv2.imshow("Demo",frame)
-            if cv2.waitKey(1) & 0xFF == 27:
-                break
-            success,frame = cap.read()  
-    
+                cv2.imshow("Demo",frame)
+                if cv2.waitKey(1) & 0xFF == 27:
+                    break
+                success,frame = cap.read()  
+    except Exception as e:
+        print(e)
+        gaze_sender.close()
+        
