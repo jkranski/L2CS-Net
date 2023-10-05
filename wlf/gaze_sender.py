@@ -8,10 +8,10 @@ class GazeSender:
     def __init__(self, mcast_grp="224.0.0.224", port=49988):
         self._port = port
         self._mcast_grp = mcast_grp
-        MULTICAST_TTL = 2
-
-        self._socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP)
-        self._socket.setsockopt(socket.IPPROTO_IP, socket.IP_MULTICAST_TTL, MULTICAST_TTL)
+        
+        ttl = struct.pack('b', 1)
+        self._socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        self._socket.setsockopt(socket.IPPROTO_IP, socket.IP_MULTICAST_TTL, ttl)
         self._socket.setblocking(False)
 
     def send(self, data: GazeData):
