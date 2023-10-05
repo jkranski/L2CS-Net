@@ -1,16 +1,17 @@
 import asyncio
 import pickle
 import socket
+import struct
 from typing import Callable
 from .gaze_data import GazeData
 
 class GazeReceiver:
-    def __init__(self, port = 49988):
-        # See https://gist.github.com/ninedraft/7c47282f8b53ac015c1e326fffb664b5
-        self._socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP)
-        #self._socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEPORT, 1)
-        self._socket.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
-        self._socket.bind(("", port))
+    def __init__(self, mcast_grp="224.0.0.224", port=49988):
+        self._socket = socket.socket(
+            socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP)
+        self._socket.bind(('', port))
+        mreq = struct.pack("4sl", socket.inet_aton(mcast_grp), socket.INADDR_ANY)
+        self._socket.setsockopt(socket.IPPROTO_IP, socket.IP_ADD_MEMBERSHIP, mreq)
         
     async def recv(self) -> GazeData:
         loop = asyncio.get_event_loop()

@@ -2,22 +2,22 @@ import pickle
 import time
 from .gaze_data import GazeData
 import socket
-
+import struct
 
 class GazeSender:
-    def __init__(self, port=49988):
+    def __init__(self, mcast_grp="224.0.0.224", port=49988):
         self._port = port
-        # See https://gist.github.com/ninedraft/7c47282f8b53ac015c1e326fffb664b5
-        self._socket = socket.socket(
-            socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP)
-        # self._socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEPORT, 1)
-        self._socket.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
+        self._mcast_grp = mcast_grp
+        MULTICAST_TTL = 2
+
+        self._socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP)
+        self._socket.setsockopt(socket.IPPROTO_IP, socket.IP_MULTICAST_TTL, MULTICAST_TTL)
         self._socket.setblocking(False)
 
     def send(self, data: GazeData):
         pickled = pickle.dumps(data)
         assert len(pickled) < 1500
-        self._socket.sendto(pickled, ('<broadcast>', self._port))
+        self._socket.sendto(pickled, (self._mcast_grp, self._port))
 
     def close(self):
         self._socket.close()
