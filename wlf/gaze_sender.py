@@ -1,30 +1,22 @@
 import pickle
 import time
 from .gaze_data import GazeData
-import socket
-import struct
+import redis
+
 
 class GazeSender:
-    def __init__(self, mcast_grp="224.0.0.224", port=49988):
-        self._port = port
-        self._mcast_grp = mcast_grp
-        
-        ttl = struct.pack('b', 1)
-        self._socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        self._socket.setsockopt(socket.IPPROTO_IP, socket.IP_MULTICAST_TTL, ttl)
-        self._socket.setblocking(False)
+    def __init__(self, redis_client: redis.Redis):
+        self.redis_client = redis_client
 
     def send(self, data: GazeData):
         pickled = pickle.dumps(data)
         assert len(pickled) < 1500
-        self._socket.sendto(pickled, (self._mcast_grp, self._port))
-
-    def close(self):
-        self._socket.close()
+        self.redis_client.publish('gaze', pickled)
 
 
 def main():
-    sender = GazeSender()
+    client = redis.Redis()
+    sender = GazeSender(redis_client=client)
 
     try:
         i = 0

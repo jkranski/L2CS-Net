@@ -1,34 +1,28 @@
-import asyncio
 import pickle
-import socket
-import struct
 from typing import Callable
 from .gaze_data import GazeData
+import redis
 
 
 class GazeReceiver:
-    def __init__(self, mcast_grp="224.0.0.224", port=49988):
-        self._socket = socket.socket(
-            socket.AF_INET, socket.SOCK_DGRAM)
-        self._socket.bind(('', port))
-        mreq = struct.pack("4sl", socket.inet_aton(
-            mcast_grp), socket.INADDR_ANY)
-        self._socket.setsockopt(
-            socket.IPPROTO_IP, socket.IP_ADD_MEMBERSHIP, mreq)
+    def __init__(self, redis_client: redis.Redis):
+        self.redis_client = redis_client
+        self.channel = self.redis_client.pubsub()
+        self.channel.subscribe("gaze")
 
-    async def recv(self) -> GazeData:
-        loop = asyncio.get_event_loop()
-        data = await loop.sock_recv(self._socket, 1500)
-        return pickle.loads(data)
-
-    async def close(self):
-        self._socket.close()
+    def recv(self, timeout) -> GazeData:
+        msg = self.channel.get_message(
+            ignore_subscribe_messages=True, timeout=timeout)
+        if msg is not None:
+            return pickle.loads(msg['data'])
 
 
-async def main():
-    receiver = GazeReceiver()
+def main():
+    client = redis.Redis()
+    receiver = GazeReceiver(client)
     while True:
-        print(await receiver.recv())
+        print(receiver.recv(timeout=1))
+
 
 if __name__ == '__main__':
-    asyncio.run(main())
+    main()
