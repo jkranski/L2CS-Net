@@ -107,7 +107,8 @@ if __name__ == '__main__':
         while True:
             success, frame = cap.read()
             start_fps = time.time()
-           
+            frame = cv2.flip(frame, 1)
+
             faces = detector(frame)
             if faces is not None: 
                 for box, landmarks, score in faces:
@@ -122,6 +123,7 @@ if __name__ == '__main__':
                     x_max=int(box[2])
                     y_max=int(box[3])
                     bbox_width = x_max - x_min
+                    bbox_center = (x_max + x_min)/2.
                     bbox_height = y_max - y_min
                     # x_min = max(0,x_min-int(0.2*bbox_height))
                     # y_min = max(0,y_min-int(0.2*bbox_width))
@@ -157,6 +159,15 @@ if __name__ == '__main__':
                     # Check for gaze direction
                     #Seems to have pitch and yaw swapped. Pitch here is the left/right gaze of the viewer
                     left_right_gaze = pitch_predicted*180.0/np.pi
+                    # Determine pierce point
+                    camera_yaw = -1*pitch_predicted # right of camera is +, left of camera is -
+                    camera_stage_distance = 0.6097 # ~24 in
+                    stage_plane_x = 7.674E-4 * (bbox_center - 320) # TODO: Implement lookup from yaml or realtime tool
+                    stage_camera_yaw = np.arctan(camera_stage_distance/stage_plane_x) if stage_plane_x != 0. else np.pi/2.
+                    stage_gaze_yaw = np.pi - stage_camera_yaw - camera_yaw
+                    stage_pillar_distance = 0.6097 #TODO: Should be based on yaml
+                    x = stage_plane_x + stage_pillar_distance/np.tan(stage_gaze_yaw)
+                    pierce_point_x = stage_plane_x + stage_pillar_distance*np.tan(pitch_predicted)
                     # TODO: Add np.bin usage here
                     # Added in some dead bands
                     if left_right_gaze < -20.0:
@@ -181,8 +192,13 @@ if __name__ == '__main__':
                 msg_changed = False
             myFPS = 1.0 / (time.time() - start_fps)
             cv2.putText(frame, 'FPS: {:.1f}'.format(myFPS), (10, 20),cv2.FONT_HERSHEY_COMPLEX_SMALL, 1, (0, 255, 0), 1, cv2.LINE_AA)
-            cv2.putText(frame, 'Pitch: {:.1f}'.format(pitch_predicted*180./np.pi), (10, 70),cv2.FONT_HERSHEY_COMPLEX_SMALL, 1, (0, 255, 0), 1, cv2.LINE_AA)
+            cv2.putText(frame, 'Pitch: {:.1f}'.format(-1*pitch_predicted*180./np.pi), (10, 70),cv2.FONT_HERSHEY_COMPLEX_SMALL, 1, (0, 255, 0), 1, cv2.LINE_AA)
             cv2.putText(frame, 'Yaw: {:.1f}'.format(yaw_predicted*180./np.pi), (10, 120),cv2.FONT_HERSHEY_COMPLEX_SMALL, 1, (0, 255, 0), 1, cv2.LINE_AA)
+            cv2.putText(frame, 'Pierce Point X: {:.3f}'.format(x), (10, 170),cv2.FONT_HERSHEY_COMPLEX_SMALL, 1, (0, 255, 0), 1, cv2.LINE_AA)
+            cv2.putText(frame, 'Bbox center: {:.3f}'.format(bbox_center), (10, 220),cv2.FONT_HERSHEY_COMPLEX_SMALL, 1, (0, 255, 0), 1, cv2.LINE_AA)
+            cv2.putText(frame, 'Stage Plane X: {:.3f}'.format(stage_plane_x), (10, 270),cv2.FONT_HERSHEY_COMPLEX_SMALL, 1, (0, 255, 0), 1, cv2.LINE_AA)
+            cv2.putText(frame, 'D tan theta: {:.3f}'.format(stage_pillar_distance*np.tan(-1*pitch_predicted)), (10, 320),cv2.FONT_HERSHEY_COMPLEX_SMALL, 1, (0, 255, 0), 1, cv2.LINE_AA)
+            cv2.putText(frame, 'stage gaze yaw {:.3f}'.format(stage_gaze_yaw*180./np.pi), (10, 370),cv2.FONT_HERSHEY_COMPLEX_SMALL, 1, (0, 255, 0), 1, cv2.LINE_AA)
 
             cv2.imshow("Demo",frame)
             if cv2.waitKey(1) & 0xFF == 27:
