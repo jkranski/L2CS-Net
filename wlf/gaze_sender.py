@@ -2,7 +2,7 @@ import time
 import redis
 import math
 
-from .gaze_data import GazeData, Face, Point2DF
+from .gaze_data import GazeData, Face, Point2DF, Point3DF
 
 
 class GazeSender:
@@ -19,10 +19,10 @@ def main():
     sender = GazeSender(redis_client=client)
 
     faces = [
-        Face(camera_centroid_norm=Point2DF(x=0.1, y=0.5), gaze_vector=Point2DF(
-            x=0.0, y=0.0), gaze_screen_intersection_norm=Point2DF(x=0.1, y=0.5)),
-        Face(camera_centroid_norm=Point2DF(x=0.8, y=0.5), gaze_vector=Point2DF(
-            x=0.0, y=0.0), gaze_screen_intersection_norm=Point2DF(x=0.5, y=0.5)),
+        Face(camera_centroid_norm=Point2DF(x=0.1, y=0.5), gaze_vector=Point3DF(
+            x=0.0, y=0.0, z=0.0), gaze_screen_intersection_norm=Point2DF(x=0.1, y=0.5)),
+        Face(camera_centroid_norm=Point2DF(x=0.8, y=0.5), gaze_vector=Point3DF(
+            x=0.0, y=0.0, z=0.0), gaze_screen_intersection_norm=Point2DF(x=0.5, y=0.5)),
     ]
 
     try:

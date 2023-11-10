@@ -7,9 +7,15 @@ class Point2DF(BaseModel):
     y: float
 
 
+class Point3DF(BaseModel):
+    x: float
+    y: float
+    z: float
+
+
 class Face(BaseModel):
     camera_centroid_norm: Point2DF
-    gaze_vector: Point2DF
+    gaze_vector: Point3DF
     gaze_screen_intersection_norm: Point2DF
 
 
