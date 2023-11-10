@@ -1,7 +1,8 @@
 import time
 import redis
+import math
 
-from .gaze_data import GazeData
+from .gaze_data import GazeData, Face, Point2DF
 
 
 class GazeSender:
@@ -17,12 +18,20 @@ def main():
     client = redis.Redis()
     sender = GazeSender(redis_client=client)
 
+    faces = [
+        Face(camera_centroid_norm=Point2DF(x=0.1, y=0.5), gaze_vector=Point2DF(
+            x=0.0, y=0.0), gaze_screen_intersection_norm=Point2DF(x=0.1, y=0.5)),
+        Face(camera_centroid_norm=Point2DF(x=0.8, y=0.5), gaze_vector=Point2DF(
+            x=0.0, y=0.0), gaze_screen_intersection_norm=Point2DF(x=0.5, y=0.5)),
+    ]
+
     try:
-        i = 0
         while True:
-            i = (i + 1) % 100
-            sender.send(
-                GazeData(column_counts=[i, (i + 25) % 100, (i + 50) % 100, (i + 75) % 100]))
+            for face in faces:
+                face.gaze_screen_intersection_norm.x = math.fmod(
+                    face.gaze_screen_intersection_norm.x + 0.1, 1)
+
+            sender.send(GazeData(faces=faces))
             time.sleep(0.1)
     except Exception as e:
         print(e)
