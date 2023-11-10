@@ -1,7 +1,7 @@
-import pickle
 import time
-from .gaze_data import GazeData
 import redis
+
+from .gaze_data import GazeData
 
 
 class GazeSender:
@@ -9,9 +9,8 @@ class GazeSender:
         self.redis_client = redis_client
 
     def send(self, data: GazeData):
-        pickled = pickle.dumps(data)
-        assert len(pickled) < 1500
-        self.redis_client.publish('gaze', pickled)
+        json_data = data.model_dump_json()
+        self.redis_client.publish('gaze', json_data)
 
 
 def main():
@@ -24,13 +23,11 @@ def main():
             i = (i + 1) % 100
             sender.send(
                 GazeData(column_counts=[i, (i + 25) % 100, (i + 50) % 100, (i + 75) % 100]))
-            time.sleep(0.01)
+            time.sleep(0.1)
     except Exception as e:
         print(e)
     except KeyboardInterrupt:
         pass
-
-    sender.close()
 
 
 if __name__ == '__main__':
