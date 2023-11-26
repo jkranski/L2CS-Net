@@ -19,6 +19,8 @@ from PIL import Image, ImageOps
 from face_detection import RetinaFace
 from model import L2CS
 
+from wlf import GazeData, Face, Point2DF, Point3DF, GazeSender
+import redis
 
 def parse_args():
     """Parse input arguments."""
@@ -80,18 +82,21 @@ if __name__ == '__main__':
 
     model = getArch(arch, 90)
     print('Loading snapshot.')
-    saved_state_dict = torch.load(snapshot_path)
+    saved_state_dict = torch.load(
+        snapshot_path, map_location=gpu)
     model.load_state_dict(saved_state_dict)
-    model.cuda(gpu)
+    model.to(gpu)
     model.eval()
 
     softmax = nn.Softmax(dim=1)
-    detector = RetinaFace(gpu_id=0)
+    detector = RetinaFace(device=gpu)
     idx_tensor = [idx for idx in range(90)]
-    idx_tensor = torch.FloatTensor(idx_tensor).cuda(gpu)
+    idx_tensor = torch.FloatTensor(idx_tensor).to(gpu)
     x = 0
 
     cap = cv2.VideoCapture(cam)
+    cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
+    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
 
     # Check if the webcam is opened correctly
     if not cap.isOpened():
@@ -102,6 +107,8 @@ if __name__ == '__main__':
     out_port = mido.open_output(mido.get_output_names()[0])
     msg_changed = False
 
+    redis_client = redis.Redis()
+    sender = GazeSender(redis_client)
     with torch.no_grad():
         while True:
             success, frame = cap.read()
@@ -110,6 +117,7 @@ if __name__ == '__main__':
 
             faces = detector(frame)
             if faces is not None:
+                net_faces: list[Face] = []
                 for box, landmarks, score in faces:
                     if score < .95:
                         continue
@@ -123,6 +131,7 @@ if __name__ == '__main__':
                     y_max = int(box[3])
                     bbox_width = x_max - x_min
                     bbox_center = (x_max + x_min)/2.
+                    bbox_center_y = (y_max + y_min) / 2.
                     bbox_height = y_max - y_min
                     # x_min = max(0,x_min-int(0.2*bbox_height))
                     # y_min = max(0,y_min-int(0.2*bbox_width))
@@ -137,7 +146,7 @@ if __name__ == '__main__':
                     img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
                     im_pil = Image.fromarray(img)
                     img = transformations(im_pil)
-                    img = Variable(img).cuda(gpu)
+                    img = Variable(img).to(gpu)
                     img = img.unsqueeze(0)
 
                     # gaze prediction
@@ -191,7 +200,14 @@ if __name__ == '__main__':
                               (pitch_predicted, yaw_predicted), color=(0, 0, 255))
                     cv2.rectangle(frame, (x_min, y_min),
                                   (x_max, y_max), (0, 255, 0), 1)
+                    net_face = Face(camera_centroid_norm=Point2DF(x=float(bbox_center)/frame.shape[1], y=float(bbox_center_y)/frame.shape[0]),
+                                    gaze_vector=Point3DF(x=0.0, y=0.0, z=0.0),
+                                    gaze_screen_intersection_norm=Point2DF(
+                                        x=x, y=0.0)
+                                    )
+                    net_faces.append(net_face)
 
+                sender.send(GazeData(faces=net_faces))
             if msg_changed:
                 out_port.send(msg)
                 msg_changed = False
@@ -216,4 +232,3 @@ if __name__ == '__main__':
             cv2.imshow("Demo", frame)
             if cv2.waitKey(1) & 0xFF == 27:
                 break
-            success, frame = cap.read()
