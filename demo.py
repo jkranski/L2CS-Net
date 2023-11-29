@@ -89,14 +89,14 @@ if __name__ == '__main__':
     model.eval()
 
     softmax = nn.Softmax(dim=1)
-    detector = RetinaFace(device=gpu)
+    detector = RetinaFace(gpu_id=0)
     idx_tensor = [idx for idx in range(90)]
     idx_tensor = torch.FloatTensor(idx_tensor).to(gpu)
     x = 0
 
     cap = cv2.VideoCapture(cam)
-    cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
-    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
+    #cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
+    #cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
 
     # Check if the webcam is opened correctly
     if not cap.isOpened():
