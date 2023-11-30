@@ -1,6 +1,6 @@
 import pickle
 from typing import Callable
-from .gaze_data import GazeData
+from gaze_data import GazeData
 import redis
 
 
@@ -14,7 +14,7 @@ class GazeReceiver:
         msg = self.channel.get_message(
             ignore_subscribe_messages=True, timeout=timeout)
         if msg is not None:
-            return pickle.loads(msg['data'])
+            return msg['data']
 
 
 def main():
