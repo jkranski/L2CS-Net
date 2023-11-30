@@ -48,7 +48,31 @@ def draw_gaze(a,b,c,d,image_in, pitchyaw, thickness=2, color=(255, 255, 0),sclae
     cv2.arrowedLine(image_out, tuple(np.round(pos).astype(np.int32)),
                    tuple(np.round([pos[0] + dx, pos[1] + dy]).astype(int)), color,
                    thickness, cv2.LINE_AA, tipLength=0.18)
-    return image_out    
+    return image_out   
+
+
+def annotate_image_debug(fps, pitch, yaw, x, bbox_center, stage_x, stage_pillar_dist, stage_gaze_yaw, input_img):
+    image_out = input_img
+    cv2.putText(image_out, 'FPS: {:.1f}'.format(
+        fps), (10, 20), cv2.FONT_HERSHEY_COMPLEX_SMALL, 1, (0, 255, 0), 1, cv2.LINE_AA)
+    cv2.putText(image_out, 'Pitch: {:.1f}'.format(-1 * pitch * 180. / np.pi),
+                (10, 70), cv2.FONT_HERSHEY_COMPLEX_SMALL, 1, (0, 255, 0), 1, cv2.LINE_AA)
+    cv2.putText(image_out, 'Yaw: {:.1f}'.format(yaw * 180. / np.pi), (10, 120),
+                cv2.FONT_HERSHEY_COMPLEX_SMALL, 1, (0, 255, 0), 1, cv2.LINE_AA)
+    cv2.putText(image_out, 'Pierce Point X: {:.3f}'.format(
+        x), (10, 170), cv2.FONT_HERSHEY_COMPLEX_SMALL, 1, (0, 255, 0), 1, cv2.LINE_AA)
+    cv2.putText(image_out, 'Bbox center: {:.3f}'.format(
+        bbox_center), (10, 220), cv2.FONT_HERSHEY_COMPLEX_SMALL, 1, (0, 255, 0), 1, cv2.LINE_AA)
+    cv2.putText(image_out, 'Stage Plane X: {:.3f}'.format(
+        stage_x), (10, 270), cv2.FONT_HERSHEY_COMPLEX_SMALL, 1, (0, 255, 0), 1, cv2.LINE_AA)
+    cv2.putText(image_out, 'D tan theta: {:.3f}'.format(
+        stage_pillar_dist * np.tan(-1 * pitch)), (10, 320),
+                cv2.FONT_HERSHEY_COMPLEX_SMALL, 1,
+                (0, 255, 0), 1, cv2.LINE_AA)
+    cv2.putText(image_out, 'stage gaze yaw {:.3f}'.format(
+        stage_gaze_yaw * 180. / np.pi), (10, 370), cv2.FONT_HERSHEY_COMPLEX_SMALL, 1, (0, 255, 0), 1,
+                cv2.LINE_AA)
+    return image_out
 
 def select_device(device='', batch_size=None):
     if torch.backends.mps.is_available():

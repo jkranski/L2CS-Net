@@ -13,7 +13,7 @@ import torch.backends.cudnn as cudnn
 import torchvision
 
 from PIL import Image
-from utils import select_device, draw_gaze
+from utils import select_device, draw_gaze, annotate_image_debug
 from PIL import Image, ImageOps
 
 from face_detection import RetinaFace
@@ -109,6 +109,7 @@ if __name__ == '__main__':
 
     redis_client = redis.Redis()
     sender = GazeSender(redis_client)
+
     with torch.no_grad():
         while True:
             success, frame = cap.read()
@@ -116,6 +117,7 @@ if __name__ == '__main__':
             frame = cv2.flip(frame, 1)
 
             faces = detector(frame)
+            quadrants = [0, 0, 0, 0, 0]
             if faces is not None:
                 net_faces: list[Face] = []
                 for box, landmarks, score in faces:
@@ -169,13 +171,15 @@ if __name__ == '__main__':
                     left_right_gaze = pitch_predicted*180.0/np.pi
                     # Determine pierce point
                     camera_yaw = -1*pitch_predicted  # right of camera is +, left of camera is -
-                    camera_stage_distance = 0.6097  # ~24 in
+                    camera_stage_distance = 2*0.6097  # ~2*24 in
                     # TODO: Implement lookup from yaml or realtime tool
-                    stage_plane_x = 7.674E-4 * (bbox_center - 320)
+                    # TODO: Add sliders to adjust params to get robust quadrant detection
+                    meters_per_pixel = 507/0.9144 # Measured on 11-30-2023
+                    stage_plane_x = meters_per_pixel * (bbox_center - 320)
                     stage_camera_yaw = np.arctan(
                         camera_stage_distance/stage_plane_x) if stage_plane_x != 0. else np.pi/2.
                     stage_gaze_yaw = np.pi - stage_camera_yaw - camera_yaw
-                    stage_pillar_distance = 0.6097  # TODO: Should be based on yaml
+                    stage_pillar_distance = 1.524  # distance in meters from stage to projection surface
                     x = stage_plane_x + stage_pillar_distance / \
                         np.tan(stage_gaze_yaw)
                     pierce_point_x = stage_plane_x + \
@@ -183,23 +187,37 @@ if __name__ == '__main__':
                     # TODO: Add np.bin usage here
                     # Added in some dead bands
                     if left_right_gaze < -20.0:
+                        i = 0
                         note_tone = 20
                     elif -15. < left_right_gaze < -2.5:
+                        i = 1
                         note_tone = 40
                     elif 2.5 < left_right_gaze < 15.:
+                        i = 2
                         note_tone = 60
                     elif left_right_gaze > 20.0:
+                        i = 3
                         note_tone = 80
                     else:
+                        i = 4
                         note_tone = msg.note
                     if note_tone != msg.note:
                         msg = msg.copy(note=note_tone)
                         msg_changed = True
+                    quadrants[i] += 1
 
                     draw_gaze(x_min, y_min, bbox_width, bbox_height, frame,
                               (pitch_predicted, yaw_predicted), color=(0, 0, 255))
                     cv2.rectangle(frame, (x_min, y_min),
                                   (x_max, y_max), (0, 255, 0), 1)
+                    myFPS = 1.0 / (time.time() - start_fps)
+                    cv2.putText(frame, 'Quadrant A: {:.1f}  Quadrant B: {:.1f}'.format(
+                        quadrants[0], quadrants[1]), (10, 20),
+                                cv2.FONT_HERSHEY_COMPLEX_SMALL, 1, (0, 255, 0), 1, cv2.LINE_AA)
+                    cv2.putText(frame, 'Quadrant C: {:.1f}  Quadrant D: {:.1f}'.format(
+                        quadrants[2], quadrants[3]), (10, 70),
+                                cv2.FONT_HERSHEY_COMPLEX_SMALL, 1, (0, 255, 0), 1, cv2.LINE_AA)
+                    #annotate_image_debug(myFPS, pitch_predicted, yaw_predicted, x, bbox_center, stage_plane_x, stage_pillar_distance, stage_gaze_yaw, frame)
                     net_face = Face(camera_centroid_norm=Point2DF(x=float(bbox_center)/frame.shape[1], y=float(bbox_center_y)/frame.shape[0]),
                                     gaze_vector=Point3DF(x=0.0, y=0.0, z=0.0),
                                     gaze_screen_intersection_norm=Point2DF(
@@ -208,26 +226,12 @@ if __name__ == '__main__':
                     net_faces.append(net_face)
 
                 sender.send(GazeData(faces=net_faces))
+
+
+
             if msg_changed:
                 out_port.send(msg)
                 msg_changed = False
-            myFPS = 1.0 / (time.time() - start_fps)
-            cv2.putText(frame, 'FPS: {:.1f}'.format(
-                myFPS), (10, 20), cv2.FONT_HERSHEY_COMPLEX_SMALL, 1, (0, 255, 0), 1, cv2.LINE_AA)
-            cv2.putText(frame, 'Pitch: {:.1f}'.format(-1*pitch_predicted*180./np.pi),
-                        (10, 70), cv2.FONT_HERSHEY_COMPLEX_SMALL, 1, (0, 255, 0), 1, cv2.LINE_AA)
-            cv2.putText(frame, 'Yaw: {:.1f}'.format(yaw_predicted*180./np.pi), (10, 120),
-                        cv2.FONT_HERSHEY_COMPLEX_SMALL, 1, (0, 255, 0), 1, cv2.LINE_AA)
-            cv2.putText(frame, 'Pierce Point X: {:.3f}'.format(
-                x), (10, 170), cv2.FONT_HERSHEY_COMPLEX_SMALL, 1, (0, 255, 0), 1, cv2.LINE_AA)
-            cv2.putText(frame, 'Bbox center: {:.3f}'.format(
-                bbox_center), (10, 220), cv2.FONT_HERSHEY_COMPLEX_SMALL, 1, (0, 255, 0), 1, cv2.LINE_AA)
-            cv2.putText(frame, 'Stage Plane X: {:.3f}'.format(
-                stage_plane_x), (10, 270), cv2.FONT_HERSHEY_COMPLEX_SMALL, 1, (0, 255, 0), 1, cv2.LINE_AA)
-            cv2.putText(frame, 'D tan theta: {:.3f}'.format(
-                stage_pillar_distance*np.tan(-1*pitch_predicted)), (10, 320), cv2.FONT_HERSHEY_COMPLEX_SMALL, 1, (0, 255, 0), 1, cv2.LINE_AA)
-            cv2.putText(frame, 'stage gaze yaw {:.3f}'.format(
-                stage_gaze_yaw*180./np.pi), (10, 370), cv2.FONT_HERSHEY_COMPLEX_SMALL, 1, (0, 255, 0), 1, cv2.LINE_AA)
 
             cv2.imshow("Demo", frame)
             if cv2.waitKey(1) & 0xFF == 27:

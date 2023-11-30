@@ -1,6 +1,6 @@
 import pickle
 from typing import Callable
-from gaze_data import GazeData
+from .gaze_data import GazeData
 import redis
 
 
