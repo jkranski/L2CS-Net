@@ -115,7 +115,6 @@ if __name__ == '__main__':
             success, frame = cap.read()
             start_fps = time.time()
             frame = cv2.flip(frame, 1)
-
             faces = detector(frame)
             quadrants = [0, 0, 0, 0, 0]
             if faces is not None:
@@ -172,14 +171,21 @@ if __name__ == '__main__':
                     # Determine pierce point
                     camera_yaw = -1*pitch_predicted  # right of camera is +, left of camera is -
                     camera_stage_distance = 2*0.6097  # ~2*24 in
+                    stage_pillar_distance = 1.524  # distance in meters from stage to projection surface
                     # TODO: Implement lookup from yaml or realtime tool
                     # TODO: Add sliders to adjust params to get robust quadrant detection
-                    meters_per_pixel = 507/0.9144 # Measured on 11-30-2023
+                    meters_per_pixel = 0.9144/507 # Measured on 11-30-2023
                     stage_plane_x = meters_per_pixel * (bbox_center - 320)
+                    beta = np.tan(stage_plane_x/camera_stage_distance)*180./np.pi
+                    alpha = 180. - (90. - beta) + left_right_gaze
+                    #print(f"alpha: {alpha:.3f} beta: {beta:.3f} left_right_gaze: {left_right_gaze:.3f}")
+                    delta_x = stage_pillar_distance/np.tan(alpha*np.pi/180.)
+                    x_screen = stage_plane_x + delta_x
+                    #x_screen = (x_screen + 0.7)/1.4 # Center and scale to 0-1
+                    #print(f"stage_plane_x: {stage_plane_x:.3f} delta x: {delta_x:.3f} x_screen: {x_screen:.3f}")
                     stage_camera_yaw = np.arctan(
                         camera_stage_distance/stage_plane_x) if stage_plane_x != 0. else np.pi/2.
                     stage_gaze_yaw = np.pi - stage_camera_yaw - camera_yaw
-                    stage_pillar_distance = 1.524  # distance in meters from stage to projection surface
                     x = stage_plane_x + stage_pillar_distance / \
                         np.tan(stage_gaze_yaw)
                     pierce_point_x = stage_plane_x + \
@@ -221,7 +227,7 @@ if __name__ == '__main__':
                     net_face = Face(camera_centroid_norm=Point2DF(x=float(bbox_center)/frame.shape[1], y=float(bbox_center_y)/frame.shape[0]),
                                     gaze_vector=Point3DF(x=0.0, y=0.0, z=0.0),
                                     gaze_screen_intersection_norm=Point2DF(
-                                        x=x, y=0.0)
+                                        x=(x_screen+2.)/4., y=0.0)
                                     )
                     net_faces.append(net_face)
 
