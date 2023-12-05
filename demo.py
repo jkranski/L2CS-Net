@@ -2,8 +2,6 @@ import argparse
 import numpy as np
 import cv2
 import time
-import mido
-
 
 import torch
 import torch.nn as nn
@@ -21,6 +19,7 @@ from model import L2CS
 
 from wlf import GazeData, Face, Point2DF, Point3DF, GazeSender
 import redis
+
 
 def parse_args():
     """Parse input arguments."""
@@ -102,13 +101,25 @@ if __name__ == '__main__':
     if not cap.isOpened():
         raise IOError("Cannot open webcam")
 
-    # Set up MIDI port
-    msg = mido.Message('note_on', note=60)
-    out_port = mido.open_output(mido.get_output_names()[0])
-    msg_changed = False
-
     redis_client = redis.Redis()
     sender = GazeSender(redis_client)
+
+    #Set up OpenCV Window
+    cv2.namedWindow("Demo")
+    cam_stage = "Camera Stage Distance (m*1E4)"
+    stage_projection = "Stage Projection Distance (m*1E4)"
+    m_per_px = "Meters per pixel (m/px*1E7)"
+    cv2.createTrackbar(cam_stage, "Demo", 18288, 30000, lambda y: None)
+    cv2.createTrackbar(stage_projection, "Demo", 18288, 30000, lambda y: None)
+    cv2.createTrackbar(m_per_px, "Demo", 33899, 50000, lambda y: None)
+    cv2.createTrackbar("shift_1", "Demo", 40, 80, lambda y: None)
+    cv2.createTrackbar("shift_2", "Demo", 80, 160, lambda y: None)
+
+
+
+    camera_stage_distance = cv2.getTrackbarPos(cam_stage, "Demo")/1E4
+    stage_projection_distance = cv2.getTrackbarPos(stage_projection, "Demo")/1E4
+    meters_per_pixel = cv2.getTrackbarPos(m_per_px, "Demo")/1E7
 
     with torch.no_grad():
         while True:
@@ -169,47 +180,31 @@ if __name__ == '__main__':
                     # Seems to have pitch and yaw swapped. Pitch here is the left/right gaze of the viewer
                     left_right_gaze = pitch_predicted*180.0/np.pi
                     # Determine pierce point
-                    camera_yaw = -1*pitch_predicted  # right of camera is +, left of camera is -
-                    camera_stage_distance = 2*0.6097  # ~2*24 in
-                    stage_pillar_distance = 1.524  # distance in meters from stage to projection surface
-                    # TODO: Implement lookup from yaml or realtime tool
-                    # TODO: Add sliders to adjust params to get robust quadrant detection
-                    meters_per_pixel = 0.9144/507 # Measured on 11-30-2023
+                    camera_stage_distance = cv2.getTrackbarPos(cam_stage, "Demo")/1E4
+                    stage_projection_distance = cv2.getTrackbarPos(stage_projection, "Demo")/1E4
+                    meters_per_pixel = cv2.getTrackbarPos(m_per_px, "Demo")/1E7
+
                     stage_plane_x = meters_per_pixel * (bbox_center - 320)
                     beta = np.tan(stage_plane_x/camera_stage_distance)*180./np.pi
                     alpha = 180. - (90. - beta) + left_right_gaze
                     #print(f"alpha: {alpha:.3f} beta: {beta:.3f} left_right_gaze: {left_right_gaze:.3f}")
-                    delta_x = stage_pillar_distance/np.tan(alpha*np.pi/180.)
+                    delta_x = stage_projection_distance/np.tan(alpha*np.pi/180.)
                     x_screen = stage_plane_x + delta_x
                     #x_screen = (x_screen + 0.7)/1.4 # Center and scale to 0-1
                     #print(f"stage_plane_x: {stage_plane_x:.3f} delta x: {delta_x:.3f} x_screen: {x_screen:.3f}")
-                    stage_camera_yaw = np.arctan(
-                        camera_stage_distance/stage_plane_x) if stage_plane_x != 0. else np.pi/2.
-                    stage_gaze_yaw = np.pi - stage_camera_yaw - camera_yaw
-                    x = stage_plane_x + stage_pillar_distance / \
-                        np.tan(stage_gaze_yaw)
-                    pierce_point_x = stage_plane_x + \
-                        stage_pillar_distance*np.tan(pitch_predicted)
-                    # TODO: Add np.bin usage here
+
                     # Added in some dead bands
                     if left_right_gaze < -20.0:
                         i = 0
-                        note_tone = 20
                     elif -15. < left_right_gaze < -2.5:
                         i = 1
-                        note_tone = 40
                     elif 2.5 < left_right_gaze < 15.:
                         i = 2
-                        note_tone = 60
                     elif left_right_gaze > 20.0:
                         i = 3
-                        note_tone = 80
                     else:
                         i = 4
-                        note_tone = msg.note
-                    if note_tone != msg.note:
-                        msg = msg.copy(note=note_tone)
-                        msg_changed = True
+
                     quadrants[i] += 1
 
                     draw_gaze(x_min, y_min, bbox_width, bbox_height, frame,
@@ -223,21 +218,24 @@ if __name__ == '__main__':
                     cv2.putText(frame, 'Quadrant C: {:.1f}  Quadrant D: {:.1f}'.format(
                         quadrants[2], quadrants[3]), (10, 70),
                                 cv2.FONT_HERSHEY_COMPLEX_SMALL, 1, (0, 255, 0), 1, cv2.LINE_AA)
-                    #annotate_image_debug(myFPS, pitch_predicted, yaw_predicted, x, bbox_center, stage_plane_x, stage_pillar_distance, stage_gaze_yaw, frame)
+                    #annotate_image_debug(myFPS, pitch_predicted, yaw_predicted, x, bbox_center, stage_plane_x, stage_projection_distance, stage_gaze_yaw, frame)
+                    shift_1 = cv2.getTrackbarPos("shift_1", "Demo")
+                    shift_2 = cv2.getTrackbarPos("shift_2", "Demo")
+
+
                     net_face = Face(camera_centroid_norm=Point2DF(x=float(bbox_center)/frame.shape[1], y=float(bbox_center_y)/frame.shape[0]),
                                     gaze_vector=Point3DF(x=0.0, y=0.0, z=0.0),
                                     gaze_screen_intersection_norm=Point2DF(
-                                        x=(x_screen+2.)/4., y=0.0)
+                                        x=(-1.*left_right_gaze+shift_1)/shift_2, y=0.0)
                                     )
+                    #print(f"x_screen: {x_screen:.3f}")
+                    #print(f"left_right_gaze: {left_right_gaze:.3f}")
+                    #shift_1:30, #shift_2:50 for 12-1-2023 demo
+                    print(f"normed: {(-1.*left_right_gaze+shift_1)/shift_2}")
+
                     net_faces.append(net_face)
 
                 sender.send(GazeData(faces=net_faces))
-
-
-
-            if msg_changed:
-                out_port.send(msg)
-                msg_changed = False
 
             cv2.imshow("Demo", frame)
             if cv2.waitKey(1) & 0xFF == 27:
