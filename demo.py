@@ -21,6 +21,9 @@ from model import L2CS
 
 from wlf import GazeData, Face, Point2DF, Point3DF, GazeSender
 import redis
+import io
+import base64
+
 
 def parse_args():
     """Parse input arguments."""
@@ -200,10 +203,15 @@ if __name__ == '__main__':
                               (pitch_predicted, yaw_predicted), color=(0, 0, 255))
                     cv2.rectangle(frame, (x_min, y_min),
                                   (x_max, y_max), (0, 255, 0), 1)
+
+                    jpeg_img = io.BytesIO()
+                    im_pil.save(jpeg_img, format='JPEG')
                     net_face = Face(camera_centroid_norm=Point2DF(x=float(bbox_center)/frame.shape[1], y=float(bbox_center_y)/frame.shape[0]),
                                     gaze_vector=Point3DF(x=0.0, y=0.0, z=0.0),
                                     gaze_screen_intersection_norm=Point2DF(
-                                        x=x, y=0.0)
+                                        x=float(bbox_center)/frame.shape[1], y=0.0),
+                                    face_patch_jpeg_base64=base64.b64encode(
+                                        jpeg_img.getvalue())
                                     )
                     net_faces.append(net_face)
 
