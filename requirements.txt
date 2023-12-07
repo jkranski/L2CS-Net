@@ -11,3 +11,5 @@ python-rtmidi~=1.5.6
 redis[hiredis]~=5.0
 pydantic~=2.5
 face-detection @ git+https://github.com/jfaust/face-detection@6710a31
+
+tqdm~=4.66.1
