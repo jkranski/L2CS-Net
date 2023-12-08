@@ -1,6 +1,7 @@
 import cv2
 import numpy as np
 import time
+import os
 
 import torch
 import torch.nn as nn
@@ -16,6 +17,8 @@ from PIL import Image
 from wlf.utility_scripts.calibration_data import Point2D, BoundingBox
 
 
+# NOTE: Consider adding Linear layer for u/v, with 4x bins per layer (similar to 90 bins for yaw, gaze)
+# NOTE: Also consider looking into applying confidence threshold on gaze detection
 def extract_face(full_img, bbox):
     x_min = int(bbox[0])
     if x_min < 0:
@@ -59,7 +62,21 @@ class GazeDataCollection:
         self.__init_model__()
         self.__init_camera__(0)
         self.__init_visualization__()
-        
+        # gaze_data: (bbox_center_x, bbox_center_y, bbox_width, bbox_height,
+        #             yaw, pitch,
+        #             label_x, label_y,
+        #             label_u, label_v)
+        # Label_x/y: 0 -> 3, for row, column _u/v for pixel value
+        self.gaze_data = np.zeros((1000, 10), dtype=np.float32)
+        self.capture_data = False
+        self.capture_idx = 0
+        self.label = Point2D(x=0, y=0)
+        timestr = time.strftime("%Y%m%d-%H%M%S")
+        calibration_data_path = os.path.join(os.getcwd(), 'calibration_data')
+        self.session_path = os.path.join(calibration_data_path, timestr)
+        os.mkdir(self.session_path)
+        self.capture_complete = False
+
     def __init_model__(self):
         cudnn.enabled = True
         arch = 'ResNet50'
@@ -107,10 +124,10 @@ class GazeDataCollection:
         self.window_w = w
         self.window_h = h
         self.canvas_img = np.zeros((h, w, 3))
-        
+
     def detect_faces(self, input_img):
         return self.detector(input_img)
-    
+
     def convert_and_load_img(self, input_img):
         input_img = cv2.resize(input_img, (224, 224))
         input_img = cv2.cvtColor(input_img, cv2.COLOR_BGR2RGB)
@@ -119,7 +136,7 @@ class GazeDataCollection:
         input_img = Variable(input_img).to(self.gpu)
         output_img = input_img.unsqueeze(0)
         return output_img
-    
+
     def get_gaze_estimate(self, face_patch):
         yaw, pitch = self.model(face_patch)
 
@@ -133,7 +150,7 @@ class GazeDataCollection:
         # Detach and get usable values
         pitch_pred = pitch_pred.cpu().detach().numpy() * np.pi / 180.0
         yaw_pred = yaw_pred.cpu().detach().numpy() * np.pi / 180.0
-        
+
         return pitch_pred, yaw_pred
 
     def run(self):
@@ -142,6 +159,15 @@ class GazeDataCollection:
                 success, frame = self.cam.read()
                 start_fps = time.time()
                 frame = cv2.flip(frame, 1)
+
+                # Draw target images on canvas
+                i = self.label.x
+                j = self.label.y
+                width_pos = int(self.window_w / (2 * 4) + i * self.window_w / 4)
+                height_pos = int(self.window_h / (2 * 4) + j * self.window_h / 4)
+                circle_color = (0, 0, 255) if self.capture_data else (0, 255, 255)
+                cv2.circle(self.canvas_img, (width_pos, height_pos), 10, circle_color, -1)
+
                 faces = self.detect_faces(frame)
                 if faces is not None:
                     for box, landmarks, score in faces:
@@ -150,22 +176,45 @@ class GazeDataCollection:
                         face, bbox = extract_face(frame, box)
                         converted_face = self.convert_and_load_img(face)
                         pitch_predicted, yaw_predicted = self.get_gaze_estimate(converted_face)
-                        myFPS = 1.0 / (time.time() - start_fps)
-                        frame = annotate_frame(frame, bbox, yaw_predicted, pitch_predicted, myFPS)
-
-                # Draw target images on canvas
-                for i in range(4):
-                    for j in range(4):
-                        width_pos = int(self.window_w / (2 * 4) + i * self.window_w / 4)
-                        height_pos = int(self.window_h / (2 * 4) + j * self.window_h / 4)
-                        cv2.circle(self.canvas_img, (width_pos, height_pos), 10, (0, 0, 200), -1)
-                cv2.imshow(self.gaze_target, self.canvas_img)
+                        my_fps = 1.0 / (time.time() - start_fps)
+                        frame = annotate_frame(frame, bbox, yaw_predicted, pitch_predicted, my_fps)
+                        if self.capture_data:
+                            # gaze_data: (bbox_center_x, bbox_center_y, bbox_width, bbox_height,
+                            #             yaw, pitch,
+                            #             label_x, label_y,
+                            #             label_u, label_v)
+                            self.gaze_data[self.capture_idx] = [bbox.center.x, bbox.center.y,
+                                                                bbox.width, bbox.height,
+                                                                yaw_predicted, pitch_predicted,
+                                                                self.label.x, self.label.y,
+                                                                width_pos, height_pos]
+                            self.capture_idx += 1
+                            if self.capture_idx == self.gaze_data.shape[1]: #SHOULD BE 0, leaving here to test
+                                self.capture_data = False
+                                self.capture_idx = 0
+                                with open(f"{self.session_path}/target_{self.label.x}_{self.label.y}.npy", 'wb') as f:
+                                    np.save(f, self.gaze_data)
+                                self.canvas_img[:, :, :] = 0
+                                if self.label.x == 3:
+                                    self.label.x = 0
+                                    self.label.y += 1
+                                else:
+                                    self.label.x += 1
+                                if self.label.y == 4:
+                                    print(f"Reached end of data capture")
+                                    self.capture_complete = True
+                                    break
                 cv2.imshow("Demo", frame)
+                cv2.imshow(self.gaze_target, self.canvas_img)
                 key = cv2.waitKey(1)
-                if key & 0xFF == 27:
+
+                if key & 0xFF == 27 or self.capture_complete:
                     # ESC pressed
-                    print("Escape hit, closing...")
+                    print("Closing...")
                     break
+                elif key & 0xFF == 32:  # Spacebar
+                    print(f"Capturing gaze data for location x: {self.label.x} y: {self.label.y}")
+                    self.capture_data = True
                 elif key != -1:
                     print(f"Key pressed: {key}")
 
