@@ -1,4 +1,5 @@
 import copy
+import os
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -7,8 +8,36 @@ import torch.nn as nn
 import torch.optim as optim
 import tqdm
 from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import StandardScaler
+import pandas as pd
 from sklearn.datasets import fetch_california_housing
-#TODO: Get data in pandas df. Write capture script. Normalize input values.
+#TODO: Get data in pandas df. Normalize input values.
+
+
+def load_data(path):
+    """
+    Give path relative to calibration_data folder
+    """
+    full_path = os.path.join(os.getcwd(), "calibration_data")
+    full_path = os.path.join(full_path, path)
+    cols = ["Bbox Center X", "Bbox Center Y",
+            "BBox Width", "Bbox Height",
+            "Yaw", "Pitch",
+            "Gaze Target Index - X",
+            "Gaze Target Index - Y",
+            "Gaze Target - U",
+            "Gaze Target - V"]
+    data_list = []
+    for i in range(4):
+        for j in range(4):
+            x = np.load(os.path.join(full_path, f"target_{i}_{j}.npy"))
+            data_list.extend(x.tolist())
+    data_df = pd.DataFrame(data_list, columns=cols)
+    data_cols = ["Bbox Center X", "Bbox Center Y",
+                 "BBox Width", "Bbox Height",
+                 "Yaw", "Pitch"]
+    target_cols = ["Gaze Target - U", "Gaze Target - V"]
+    return data_df[data_cols].to_numpy(), data_df[target_cols].to_numpy()
 
 class NeuralNetwork(nn.Module):
     def __init__(self):
@@ -21,8 +50,15 @@ class NeuralNetwork(nn.Module):
             nn.ReLU(),
             nn.Linear(12, 6),
             nn.ReLU(),
-            nn.Linear(6, 2)  # x, y output on screen
+            nn.Linear(6, 2)  # u, v output on screen
         )
+
+    def forward(self, x):
+        """
+        Forward pass
+        """
+        model_pred = self.linear_relu_stack(x)
+        return model_pred[:, 0], model_pred[:, 1]
 
 
 device = (
@@ -35,17 +71,25 @@ device = (
 print(f"Using {device} device")
 
 # Read data
-data = load_data() #TODO: Get data
-X, y = data.data, data.target
+data, target = load_data("20231214-123750")
+X, y = data, target
+scale_data = True
+if scale_data:
+    X = StandardScaler().fit_transform(X)
 
 # train-test split for model evaluation
 X_train, X_test, y_train, y_test = train_test_split(X, y, train_size=0.8, shuffle=True)
 
 # Convert to 2D PyTorch tensors
 X_train = torch.tensor(X_train, dtype=torch.float32)
-y_train = torch.tensor(y_train, dtype=torch.float32).reshape(-1, 1)
+y_train = torch.tensor(y_train, dtype=torch.float32).reshape(-1, 2)
 X_test = torch.tensor(X_test, dtype=torch.float32)
-y_test = torch.tensor(y_test, dtype=torch.float32).reshape(-1, 1)
+y_test = torch.tensor(y_test, dtype=torch.float32).reshape(-1, 2)
+# Convert to 2D PyTorch tensors
+X_train = X_train.to(device)
+y_train = y_train.to(device)
+X_test = X_test.to(device)
+y_test = y_test.to(device)
 
 model = NeuralNetwork().to(device)
 print(model)
@@ -65,15 +109,24 @@ history = []
 
 for epoch in range(n_epochs):
     model.train()
+    print(f"Epoch: {epoch}")
     with tqdm.tqdm(batch_start, unit="batch", mininterval=0, disable=True) as bar:
         bar.set_description(f"Epoch {epoch}")
         for start in bar:
             # take a batch
             X_batch = X_train[start:start + batch_size]
             y_batch = y_train[start:start + batch_size]
+            # Move to device
+            #X_batch = X_batch.to(device)
+            #y_batch = y_batch.to(device)
             # forward pass
-            y_pred = model(X_batch)
-            loss = loss_fn(y_pred, y_batch)
+            #y_pred = model(X_batch)
+            #loss = loss_fn(y_pred, y_batch)
+
+            u_pred, v_pred = model(X_batch)
+            loss_u = loss_fn(u_pred, y_batch[:, 0])
+            loss_v = loss_fn(v_pred, y_batch[:, 1])
+            loss = loss_u + loss_v
             # backward pass
             optimizer.zero_grad()
             loss.backward()
@@ -83,10 +136,15 @@ for epoch in range(n_epochs):
             bar.set_postfix(mse=float(loss))
     # evaluate accuracy at end of each epoch
     model.eval()
-    y_pred = model(X_test)
-    mse = loss_fn(y_pred, y_test)
+    #y_pred = model(X_test)
+    #mse = loss_fn(y_pred, y_test)
+    u_pred, v_pred = model(X_test)
+    loss_u = loss_fn(u_pred, y_test[:, 0])
+    loss_v = loss_fn(v_pred, y_test[:, 1])
+    mse = loss_u + loss_v
     mse = float(mse)
     history.append(mse)
+    print(f"MSE: {mse}")
     if mse < best_mse:
         best_mse = mse
         best_weights = copy.deepcopy(model.state_dict())

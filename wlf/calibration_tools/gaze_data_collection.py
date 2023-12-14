@@ -60,14 +60,14 @@ class GazeDataCollection:
     def __init__(self):
         cam = 0
         self.__init_model__()
-        self.__init_camera__(0)
+        self.__init_camera__(cam)
         self.__init_visualization__()
         # gaze_data: (bbox_center_x, bbox_center_y, bbox_width, bbox_height,
         #             yaw, pitch,
         #             label_x, label_y,
         #             label_u, label_v)
         # Label_x/y: 0 -> 3, for row, column _u/v for pixel value
-        self.gaze_data = np.zeros((1000, 10), dtype=np.float32)
+        self.gaze_data = np.zeros((300, 10), dtype=np.float32)
         self.capture_data = False
         self.capture_idx = 0
         self.label = Point2D(x=0, y=0)
@@ -174,6 +174,7 @@ class GazeDataCollection:
                         if score < .95:
                             continue
                         face, bbox = extract_face(frame, box)
+
                         converted_face = self.convert_and_load_img(face)
                         pitch_predicted, yaw_predicted = self.get_gaze_estimate(converted_face)
                         my_fps = 1.0 / (time.time() - start_fps)
@@ -189,7 +190,8 @@ class GazeDataCollection:
                                                                 self.label.x, self.label.y,
                                                                 width_pos, height_pos]
                             self.capture_idx += 1
-                            if self.capture_idx == self.gaze_data.shape[1]: #SHOULD BE 0, leaving here to test
+                            print(f"capture_count: {self.capture_idx} gaze_data: {self.gaze_data.shape[0]}")
+                            if self.capture_idx == self.gaze_data.shape[0]:
                                 self.capture_data = False
                                 self.capture_idx = 0
                                 with open(f"{self.session_path}/target_{self.label.x}_{self.label.y}.npy", 'wb') as f:
