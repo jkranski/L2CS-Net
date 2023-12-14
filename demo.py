@@ -209,7 +209,7 @@ if __name__ == '__main__':
                     net_face = Face(camera_centroid_norm=Point2DF(x=float(bbox_center)/frame.shape[1], y=float(bbox_center_y)/frame.shape[0]),
                                     gaze_vector=Point3DF(x=0.0, y=0.0, z=0.0),
                                     gaze_screen_intersection_norm=Point2DF(
-                                        x=float(bbox_center)/frame.shape[1], y=0.0),
+                                        x=x, y=0.0),
                                     face_patch_jpeg_base64=base64.b64encode(
                                         jpeg_img.getvalue())
                                     )
