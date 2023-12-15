@@ -1,4 +1,7 @@
 import argparse
+import os
+import joblib
+
 import numpy as np
 import cv2
 import time
@@ -20,6 +23,29 @@ from model import L2CS
 from wlf import GazeData, Face, Point2DF, Point3DF, GazeSender
 import redis
 
+#TODO: Cleanup old code. Separate out NeuralNetwork from model training logic to avoid duplication
+
+class NeuralNetwork(nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.flatten = nn.Flatten()
+        self.linear_relu_stack = nn.Sequential(
+            nn.Linear(6, 24),
+            nn.ReLU(),
+            nn.Linear(24, 12),
+            nn.ReLU(),
+            nn.Linear(12, 6),
+            nn.ReLU(),
+            nn.Linear(6, 1)  # u, v output on screen
+        )
+
+    def forward(self, x):
+        """
+        Forward pass
+        """
+        model_pred = self.linear_relu_stack(x)
+        #return model_pred[:, 0], model_pred[:, 1]
+        return model_pred
 
 def parse_args():
     """Parse input arguments."""
@@ -87,6 +113,13 @@ if __name__ == '__main__':
     model.to(gpu)
     model.eval()
 
+    #TODO: Allow model and scalar to be specified on load
+
+    projection_model = NeuralNetwork().to(gpu)
+    projection_model.load_state_dict(torch.load(os.path.join(os.getcwd(), "wlf\\calibration_tools\\20231214-143730_model.ckpt")))
+    projection_model.eval()
+    input_scalar = joblib.load("wlf\\calibration_tools\\20231214-143730_scalar.bin")
+
     softmax = nn.Softmax(dim=1)
     detector = RetinaFace(gpu_id=0)
     idx_tensor = [idx for idx in range(90)]
@@ -142,7 +175,7 @@ if __name__ == '__main__':
                     x_max = int(box[2])
                     y_max = int(box[3])
                     bbox_width = x_max - x_min
-                    bbox_center = (x_max + x_min)/2.
+                    bbox_center_x = (x_max + x_min) / 2.
                     bbox_center_y = (y_max + y_min) / 2.
                     bbox_height = y_max - y_min
                     # x_min = max(0,x_min-int(0.2*bbox_height))
@@ -162,7 +195,7 @@ if __name__ == '__main__':
                     img = img.unsqueeze(0)
 
                     # gaze prediction
-                    gaze_pitch, gaze_yaw = model(img)
+                    gaze_yaw, gaze_pitch = model(img)
 
                     pitch_predicted = softmax(gaze_pitch)
                     yaw_predicted = softmax(gaze_yaw)
@@ -176,15 +209,13 @@ if __name__ == '__main__':
                     pitch_predicted = pitch_predicted.cpu().detach().numpy() * np.pi/180.0
                     yaw_predicted = yaw_predicted.cpu().detach().numpy() * np.pi/180.0
 
-                    # Check for gaze direction
-                    # Seems to have pitch and yaw swapped. Pitch here is the left/right gaze of the viewer
-                    left_right_gaze = pitch_predicted*180.0/np.pi
+                    left_right_gaze = yaw_predicted*180.0/np.pi
                     # Determine pierce point
                     camera_stage_distance = cv2.getTrackbarPos(cam_stage, "Demo")/1E4
                     stage_projection_distance = cv2.getTrackbarPos(stage_projection, "Demo")/1E4
                     meters_per_pixel = cv2.getTrackbarPos(m_per_px, "Demo")/1E7
 
-                    stage_plane_x = meters_per_pixel * (bbox_center - 320)
+                    stage_plane_x = meters_per_pixel * (bbox_center_x - 320)
                     beta = np.tan(stage_plane_x/camera_stage_distance)*180./np.pi
                     alpha = 180. - (90. - beta) + left_right_gaze
                     #print(f"alpha: {alpha:.3f} beta: {beta:.3f} left_right_gaze: {left_right_gaze:.3f}")
@@ -208,22 +239,35 @@ if __name__ == '__main__':
                     quadrants[i] += 1
 
                     draw_gaze(x_min, y_min, bbox_width, bbox_height, frame,
-                              (pitch_predicted, yaw_predicted), color=(0, 0, 255))
+                              (yaw_predicted, pitch_predicted), color=(0, 0, 255))
+                    #TODO: Need to scale input data
+                    projection_input = torch.tensor([bbox_center_x, bbox_center_y,
+                                                     bbox_width, bbox_height,
+                                                     yaw_predicted, pitch_predicted],
+                                                    dtype=torch.float32)
+                    projection_input = input_scalar.transform(projection_input.reshape(1, -1))
+                    projection_input = torch.tensor(projection_input, dtype=torch.float32)
+                    u_pred = projection_model(projection_input.to(gpu))
+                    u_pred = u_pred.cpu().detach().numpy()
                     cv2.rectangle(frame, (x_min, y_min),
                                   (x_max, y_max), (0, 255, 0), 1)
                     myFPS = 1.0 / (time.time() - start_fps)
-                    cv2.putText(frame, 'Quadrant A: {:.1f}  Quadrant B: {:.1f}'.format(
-                        quadrants[0], quadrants[1]), (10, 20),
+                    #TODO: Don't hardcode screen width
+                    cv2.putText(frame, f"U Pred: {u_pred[0,0]*1920:.3f}", (10, 20),
                                 cv2.FONT_HERSHEY_COMPLEX_SMALL, 1, (0, 255, 0), 1, cv2.LINE_AA)
-                    cv2.putText(frame, 'Quadrant C: {:.1f}  Quadrant D: {:.1f}'.format(
-                        quadrants[2], quadrants[3]), (10, 70),
-                                cv2.FONT_HERSHEY_COMPLEX_SMALL, 1, (0, 255, 0), 1, cv2.LINE_AA)
-                    #annotate_image_debug(myFPS, pitch_predicted, yaw_predicted, x, bbox_center, stage_plane_x, stage_projection_distance, stage_gaze_yaw, frame)
+
+                    # cv2.putText(frame, 'Quadrant A: {:.1f}  Quadrant B: {:.1f}'.format(
+                    #     quadrants[0], quadrants[1]), (10, 20),
+                    #             cv2.FONT_HERSHEY_COMPLEX_SMALL, 1, (0, 255, 0), 1, cv2.LINE_AA)
+                    # cv2.putText(frame, 'Quadrant C: {:.1f}  Quadrant D: {:.1f}'.format(
+                    #     quadrants[2], quadrants[3]), (10, 70),
+                    #             cv2.FONT_HERSHEY_COMPLEX_SMALL, 1, (0, 255, 0), 1, cv2.LINE_AA)
+                    #annotate_image_debug(myFPS, pitch_predicted, yaw_predicted, x, bbox_center_x, stage_plane_x, stage_projection_distance, stage_gaze_yaw, frame)
                     shift_1 = cv2.getTrackbarPos("shift_1", "Demo")
                     shift_2 = cv2.getTrackbarPos("shift_2", "Demo")
 
 
-                    net_face = Face(camera_centroid_norm=Point2DF(x=float(bbox_center)/frame.shape[1], y=float(bbox_center_y)/frame.shape[0]),
+                    net_face = Face(camera_centroid_norm=Point2DF(x=float(bbox_center_x)/frame.shape[1], y=float(bbox_center_y)/frame.shape[0]),
                                     gaze_vector=Point3DF(x=0.0, y=0.0, z=0.0),
                                     gaze_screen_intersection_norm=Point2DF(
                                         x=(-1.*left_right_gaze+shift_1)/shift_2, y=0.0)

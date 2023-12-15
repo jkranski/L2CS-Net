@@ -1,17 +1,41 @@
 import copy
 import os
 
+import joblib
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
 import torch.nn as nn
 import torch.optim as optim
 import tqdm
+import time
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
 import pandas as pd
 from sklearn.datasets import fetch_california_housing
-#TODO: Get data in pandas df. Normalize input values.
+#TODO: Try out classifier model with 8 bins
+
+class NeuralNetwork(nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.flatten = nn.Flatten()
+        self.linear_relu_stack = nn.Sequential(
+            nn.Linear(6, 24),
+            nn.ReLU(),
+            nn.Linear(24, 12),
+            nn.ReLU(),
+            nn.Linear(12, 6),
+            nn.ReLU(),
+            nn.Linear(6, 1)  # u, v output on screen
+        )
+
+    def forward(self, x):
+        """
+        Forward pass
+        """
+        model_pred = self.linear_relu_stack(x)
+        #return model_pred[:, 0], model_pred[:, 1]
+        return model_pred
 
 
 def load_data(path):
@@ -36,30 +60,9 @@ def load_data(path):
     data_cols = ["Bbox Center X", "Bbox Center Y",
                  "BBox Width", "Bbox Height",
                  "Yaw", "Pitch"]
-    target_cols = ["Gaze Target - U", "Gaze Target - V"]
+    target_cols = ["Gaze Target - U"]
     return data_df[data_cols].to_numpy(), data_df[target_cols].to_numpy()
-
-class NeuralNetwork(nn.Module):
-    def __init__(self):
-        super().__init__()
-        self.flatten = nn.Flatten()
-        self.linear_relu_stack = nn.Sequential(
-            nn.Linear(6, 24),
-            nn.ReLU(),
-            nn.Linear(24, 12),
-            nn.ReLU(),
-            nn.Linear(12, 6),
-            nn.ReLU(),
-            nn.Linear(6, 2)  # u, v output on screen
-        )
-
-    def forward(self, x):
-        """
-        Forward pass
-        """
-        model_pred = self.linear_relu_stack(x)
-        return model_pred[:, 0], model_pred[:, 1]
-
+timestr = time.strftime("%Y%m%d-%H%M%S")
 
 device = (
     "cuda"
@@ -75,16 +78,20 @@ data, target = load_data("20231214-123750")
 X, y = data, target
 scale_data = True
 if scale_data:
-    X = StandardScaler().fit_transform(X)
+    sc = StandardScaler()
+    X = sc.fit_transform(X)
+    joblib.dump(sc, f"{timestr}_scalar.bin", compress=True)
+    #TODO: Don't hardcode screen width
+    y = y/1920.
 
 # train-test split for model evaluation
 X_train, X_test, y_train, y_test = train_test_split(X, y, train_size=0.8, shuffle=True)
 
 # Convert to 2D PyTorch tensors
 X_train = torch.tensor(X_train, dtype=torch.float32)
-y_train = torch.tensor(y_train, dtype=torch.float32).reshape(-1, 2)
+y_train = torch.tensor(y_train, dtype=torch.float32).reshape(-1, 1)
 X_test = torch.tensor(X_test, dtype=torch.float32)
-y_test = torch.tensor(y_test, dtype=torch.float32).reshape(-1, 2)
+y_test = torch.tensor(y_test, dtype=torch.float32).reshape(-1, 1)
 # Convert to 2D PyTorch tensors
 X_train = X_train.to(device)
 y_train = y_train.to(device)
@@ -120,13 +127,13 @@ for epoch in range(n_epochs):
             #X_batch = X_batch.to(device)
             #y_batch = y_batch.to(device)
             # forward pass
-            #y_pred = model(X_batch)
-            #loss = loss_fn(y_pred, y_batch)
+            y_pred = model(X_batch)
+            loss = loss_fn(y_pred, y_batch)
 
-            u_pred, v_pred = model(X_batch)
-            loss_u = loss_fn(u_pred, y_batch[:, 0])
-            loss_v = loss_fn(v_pred, y_batch[:, 1])
-            loss = loss_u + loss_v
+            #u_pred, v_pred = model(X_batch)
+            #loss_u = loss_fn(u_pred, y_batch[:, 0])
+            #loss_v = loss_fn(v_pred, y_batch[:, 1])
+            #loss = loss_u + loss_v
             # backward pass
             optimizer.zero_grad()
             loss.backward()
@@ -136,12 +143,12 @@ for epoch in range(n_epochs):
             bar.set_postfix(mse=float(loss))
     # evaluate accuracy at end of each epoch
     model.eval()
-    #y_pred = model(X_test)
-    #mse = loss_fn(y_pred, y_test)
-    u_pred, v_pred = model(X_test)
-    loss_u = loss_fn(u_pred, y_test[:, 0])
-    loss_v = loss_fn(v_pred, y_test[:, 1])
-    mse = loss_u + loss_v
+    y_pred = model(X_test)
+    mse = loss_fn(y_pred, y_test)
+    #u_pred, v_pred = model(X_test)
+    #loss_u = loss_fn(u_pred, y_test[:, 0])
+    #loss_v = loss_fn(v_pred, y_test[:, 1])
+    #mse = loss_u + loss_v
     mse = float(mse)
     history.append(mse)
     print(f"MSE: {mse}")
@@ -151,6 +158,8 @@ for epoch in range(n_epochs):
 
 # restore model and return best accuracy
 model.load_state_dict(best_weights)
+
+torch.save(model.state_dict(), os.path.join(os.getcwd(), f"{timestr}_model.ckpt"))
 print("MSE: %.2f" % best_mse)
 print("RMSE: %.2f" % np.sqrt(best_mse))
 plt.plot(history)
