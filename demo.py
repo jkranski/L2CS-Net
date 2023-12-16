@@ -21,31 +21,10 @@ from face_detection import RetinaFace
 from model import L2CS
 
 from wlf import GazeData, Face, Point2DF, Point3DF, GazeSender
+from wlf.calibration_tools.regression_nn import RegressionNeuralNetwork
 import redis
 
-#TODO: Cleanup old code. Separate out NeuralNetwork from model training logic to avoid duplication
-
-class NeuralNetwork(nn.Module):
-    def __init__(self):
-        super().__init__()
-        self.flatten = nn.Flatten()
-        self.linear_relu_stack = nn.Sequential(
-            nn.Linear(6, 24),
-            nn.ReLU(),
-            nn.Linear(24, 12),
-            nn.ReLU(),
-            nn.Linear(12, 6),
-            nn.ReLU(),
-            nn.Linear(6, 1)  # u, v output on screen
-        )
-
-    def forward(self, x):
-        """
-        Forward pass
-        """
-        model_pred = self.linear_relu_stack(x)
-        #return model_pred[:, 0], model_pred[:, 1]
-        return model_pred
+#TODO: Cleanup old code.
 
 def parse_args():
     """Parse input arguments."""
@@ -115,7 +94,7 @@ if __name__ == '__main__':
 
     #TODO: Allow model and scalar to be specified on load
 
-    projection_model = NeuralNetwork().to(gpu)
+    projection_model = RegressionNeuralNetwork().to(gpu)
     projection_model.load_state_dict(torch.load(os.path.join(os.getcwd(), "wlf\\calibration_tools\\20231214-143730_model.ckpt")))
     projection_model.eval()
     input_scalar = joblib.load("wlf\\calibration_tools\\20231214-143730_scalar.bin")

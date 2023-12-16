@@ -73,6 +73,7 @@ class GazeDataCollection:
         self.label = Point2D(x=0, y=0)
         timestr = time.strftime("%Y%m%d-%H%M%S")
         calibration_data_path = os.path.join(os.getcwd(), 'calibration_data')
+        os.mkdir(calibration_data_path)
         self.session_path = os.path.join(calibration_data_path, timestr)
         os.mkdir(self.session_path)
         self.capture_complete = False
