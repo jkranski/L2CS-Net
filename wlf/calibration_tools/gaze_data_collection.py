@@ -1,8 +1,8 @@
 import cv2
 import numpy as np
 import time
+from pathlib import Path
 import os
-
 import torch
 import torch.nn as nn
 from torch.autograd import Variable
@@ -73,9 +73,9 @@ class GazeDataCollection:
         self.label = Point2D(x=0, y=0)
         timestr = time.strftime("%Y%m%d-%H%M%S")
         calibration_data_path = os.path.join(os.getcwd(), 'calibration_data')
-        os.mkdir(calibration_data_path)
+        Path(f"./{calibration_data_path}").mkdir(exist_ok=True)
         self.session_path = os.path.join(calibration_data_path, timestr)
-        os.mkdir(self.session_path)
+        Path(f"./{self.session_path}").mkdir(exist_ok=True)
         self.capture_complete = False
 
     def __init_model__(self):

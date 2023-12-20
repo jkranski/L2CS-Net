@@ -22,7 +22,7 @@ from model import L2CS
 
 from wlf import GazeData, Face, Point2DF, Point3DF, GazeSender
 from wlf.calibration_tools.regression_nn import RegressionNeuralNetwork
-import redis
+#import redis
 
 #TODO: Cleanup old code.
 
@@ -36,6 +36,13 @@ def parse_args():
     parser.add_argument(
         '--snapshot', dest='snapshot', help='Path of model snapshot.',
         default='output/snapshots/L2CS-gaze360-_loader-180-4/_epoch_55.pkl', type=str)
+    parser.add_argument(
+        '--training_timestr', dest='training_timestr', help='Timestring for training time of projection mapping model '
+                                                            'and scalar',
+        default="20231215-172103", type=str)
+    parser.add_argument(
+        '--data_timestr', dest='data_timestr', help='Timestring for data collection',
+        default="20231215-154754", type=str)
     parser.add_argument(
         '--cam', dest='cam_id', help='Camera device id to use [0]',
         default=0, type=int)
@@ -92,12 +99,13 @@ if __name__ == '__main__':
     model.to(gpu)
     model.eval()
 
-    #TODO: Allow model and scalar to be specified on load
+    #proj_model_timestr = args.projection_timestr
 
     projection_model = RegressionNeuralNetwork().to(gpu)
-    projection_model.load_state_dict(torch.load(os.path.join(os.getcwd(), "wlf\\calibration_tools\\20231214-143730_model.ckpt")))
+    model_timestr = f"{args.training_timestr}_{args.data_timestr}"
+    projection_model.load_state_dict(torch.load(os.path.join(os.getcwd(), f"wlf\\calibration_tools\\calibration_models\\{model_timestr}_model.ckpt")))
     projection_model.eval()
-    input_scalar = joblib.load("wlf\\calibration_tools\\20231214-143730_scalar.bin")
+    input_scalar = joblib.load(f"wlf\\calibration_tools\\calibration_models\\{model_timestr}_scalar.bin")
 
     softmax = nn.Softmax(dim=1)
     detector = RetinaFace(gpu_id=0)
@@ -106,32 +114,16 @@ if __name__ == '__main__':
     x = 0
 
     cap = cv2.VideoCapture(cam)
-    #cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
-    #cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
 
     # Check if the webcam is opened correctly
     if not cap.isOpened():
         raise IOError("Cannot open webcam")
 
-    redis_client = redis.Redis()
-    sender = GazeSender(redis_client)
+    #redis_client = redis.Redis()
+    #sender = GazeSender(redis_client)
 
     #Set up OpenCV Window
     cv2.namedWindow("Demo")
-    cam_stage = "Camera Stage Distance (m*1E4)"
-    stage_projection = "Stage Projection Distance (m*1E4)"
-    m_per_px = "Meters per pixel (m/px*1E7)"
-    cv2.createTrackbar(cam_stage, "Demo", 18288, 30000, lambda y: None)
-    cv2.createTrackbar(stage_projection, "Demo", 18288, 30000, lambda y: None)
-    cv2.createTrackbar(m_per_px, "Demo", 33899, 50000, lambda y: None)
-    cv2.createTrackbar("shift_1", "Demo", 40, 80, lambda y: None)
-    cv2.createTrackbar("shift_2", "Demo", 80, 160, lambda y: None)
-
-
-
-    camera_stage_distance = cv2.getTrackbarPos(cam_stage, "Demo")/1E4
-    stage_projection_distance = cv2.getTrackbarPos(stage_projection, "Demo")/1E4
-    meters_per_pixel = cv2.getTrackbarPos(m_per_px, "Demo")/1E7
 
     with torch.no_grad():
         while True:
@@ -157,12 +149,6 @@ if __name__ == '__main__':
                     bbox_center_x = (x_max + x_min) / 2.
                     bbox_center_y = (y_max + y_min) / 2.
                     bbox_height = y_max - y_min
-                    # x_min = max(0,x_min-int(0.2*bbox_height))
-                    # y_min = max(0,y_min-int(0.2*bbox_width))
-                    # x_max = x_max+int(0.2*bbox_height)
-                    # y_max = y_max+int(0.2*bbox_width)
-                    # bbox_width = x_max - x_min
-                    # bbox_height = y_max - y_min
 
                     # Crop image
                     img = frame[y_min:y_max, x_min:x_max]
@@ -188,38 +174,8 @@ if __name__ == '__main__':
                     pitch_predicted = pitch_predicted.cpu().detach().numpy() * np.pi/180.0
                     yaw_predicted = yaw_predicted.cpu().detach().numpy() * np.pi/180.0
 
-                    left_right_gaze = yaw_predicted*180.0/np.pi
-                    # Determine pierce point
-                    camera_stage_distance = cv2.getTrackbarPos(cam_stage, "Demo")/1E4
-                    stage_projection_distance = cv2.getTrackbarPos(stage_projection, "Demo")/1E4
-                    meters_per_pixel = cv2.getTrackbarPos(m_per_px, "Demo")/1E7
-
-                    stage_plane_x = meters_per_pixel * (bbox_center_x - 320)
-                    beta = np.tan(stage_plane_x/camera_stage_distance)*180./np.pi
-                    alpha = 180. - (90. - beta) + left_right_gaze
-                    #print(f"alpha: {alpha:.3f} beta: {beta:.3f} left_right_gaze: {left_right_gaze:.3f}")
-                    delta_x = stage_projection_distance/np.tan(alpha*np.pi/180.)
-                    x_screen = stage_plane_x + delta_x
-                    #x_screen = (x_screen + 0.7)/1.4 # Center and scale to 0-1
-                    #print(f"stage_plane_x: {stage_plane_x:.3f} delta x: {delta_x:.3f} x_screen: {x_screen:.3f}")
-
-                    # Added in some dead bands
-                    if left_right_gaze < -20.0:
-                        i = 0
-                    elif -15. < left_right_gaze < -2.5:
-                        i = 1
-                    elif 2.5 < left_right_gaze < 15.:
-                        i = 2
-                    elif left_right_gaze > 20.0:
-                        i = 3
-                    else:
-                        i = 4
-
-                    quadrants[i] += 1
-
                     draw_gaze(x_min, y_min, bbox_width, bbox_height, frame,
                               (yaw_predicted, pitch_predicted), color=(0, 0, 255))
-                    #TODO: Need to scale input data
                     projection_input = torch.tensor([bbox_center_x, bbox_center_y,
                                                      bbox_width, bbox_height,
                                                      yaw_predicted, pitch_predicted],
@@ -231,35 +187,33 @@ if __name__ == '__main__':
                     cv2.rectangle(frame, (x_min, y_min),
                                   (x_max, y_max), (0, 255, 0), 1)
                     myFPS = 1.0 / (time.time() - start_fps)
-                    #TODO: Don't hardcode screen width
-                    cv2.putText(frame, f"U Pred: {u_pred[0,0]*1920:.3f}", (10, 20),
+                    scaled_output = (u_pred[0,0]-500)/2500.
+                    response = "None"
+                    if scaled_output < 0.15:
+                        response = "A"
+                    elif scaled_output > 0.25 and scaled_output < 0.45:
+                        response = "B"
+                    elif scaled_output > 0.55 and scaled_output < 0.75:
+                        response = "C"
+                    elif scaled_output > 0.85:
+                        response = "D"
+                    # cv2.putText(frame, f"U Pred: {(u_pred[0,0]-500)/2500.:.3f}", (10, 20),
+                    #             cv2.FONT_HERSHEY_COMPLEX_SMALL, 1, (0, 255, 0), 1, cv2.LINE_AA)
+                    cv2.putText(frame, f"Quadrant: {response}", (10, 20),
                                 cv2.FONT_HERSHEY_COMPLEX_SMALL, 1, (0, 255, 0), 1, cv2.LINE_AA)
-
-                    # cv2.putText(frame, 'Quadrant A: {:.1f}  Quadrant B: {:.1f}'.format(
-                    #     quadrants[0], quadrants[1]), (10, 20),
-                    #             cv2.FONT_HERSHEY_COMPLEX_SMALL, 1, (0, 255, 0), 1, cv2.LINE_AA)
-                    # cv2.putText(frame, 'Quadrant C: {:.1f}  Quadrant D: {:.1f}'.format(
-                    #     quadrants[2], quadrants[3]), (10, 70),
-                    #             cv2.FONT_HERSHEY_COMPLEX_SMALL, 1, (0, 255, 0), 1, cv2.LINE_AA)
-                    #annotate_image_debug(myFPS, pitch_predicted, yaw_predicted, x, bbox_center_x, stage_plane_x, stage_projection_distance, stage_gaze_yaw, frame)
-                    shift_1 = cv2.getTrackbarPos("shift_1", "Demo")
-                    shift_2 = cv2.getTrackbarPos("shift_2", "Demo")
-
 
                     net_face = Face(camera_centroid_norm=Point2DF(x=float(bbox_center_x)/frame.shape[1], y=float(bbox_center_y)/frame.shape[0]),
                                     gaze_vector=Point3DF(x=0.0, y=0.0, z=0.0),
                                     gaze_screen_intersection_norm=Point2DF(
-                                        x=(-1.*left_right_gaze+shift_1)/shift_2, y=0.0)
+                                        x=-1., y=0.0)
                                     )
-                    #print(f"x_screen: {x_screen:.3f}")
-                    #print(f"left_right_gaze: {left_right_gaze:.3f}")
-                    #shift_1:30, #shift_2:50 for 12-1-2023 demo
-                    print(f"normed: {(-1.*left_right_gaze+shift_1)/shift_2}")
 
                     net_faces.append(net_face)
 
-                sender.send(GazeData(faces=net_faces))
+                #sender.send(GazeData(faces=net_faces))
 
             cv2.imshow("Demo", frame)
             if cv2.waitKey(1) & 0xFF == 27:
                 break
+        cap.release()
+        cv2.destroyAllWindows()
