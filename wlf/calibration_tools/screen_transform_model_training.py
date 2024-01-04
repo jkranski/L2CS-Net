@@ -179,7 +179,19 @@ if __name__ == '__main__':
             # If interested in filtering based on confidence:
             # threshold = 0.50
             # y_pred_probs = torch.softmax(y_pred, dim=1)
-            # count_above_threshold = (y_pred_probs.max(dim=1).values > threshold).sum() / len(y_pred_probs
+            # conf_index = (y_pred_probs.max(dim=1).values > threshold)
+            # percent_above_threshold = (y_pred_probs.max(dim=1).values > threshold).sum() / len(y_pred_probs)
+            # float((torch.argmax(y_pred[conf_index], 1) == y_test[conf_index]).sum()) / len(y_test[conf_index])
+            # for i in range(10):
+            #     conf_threshold = 0.1 * i
+            #     conf_index = (y_pred_probs.max(dim=1).values > conf_threshold)
+            #     count_above_threshold = (y_pred_probs.max(dim=1).values > conf_threshold).sum()
+            #     percent_above_threshold = (y_pred_probs.max(dim=1).values > conf_threshold).sum() / len(y_pred_probs)
+            #     test_acc = float((torch.argmax(y_pred[conf_index], 1) == y_test[conf_index]).sum()) / len(
+            #         y_test[conf_index])
+            #     print(
+            #         f"conf_threshold: {conf_threshold:.2f} Perc above thresh: {percent_above_threshold:.3f} test Acc: {test_acc:.3f}")
+
         else:
             test_acc = 0.
 
