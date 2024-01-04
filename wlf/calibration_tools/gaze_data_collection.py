@@ -51,8 +51,7 @@ def annotate_frame(frame, bounding_box, yaw, pitch, fps):
                   (bounding_box.upper_left.x, bounding_box.upper_left.y),
                   (bounding_box.lower_right.x, bounding_box.lower_right.y),
                   (0, 255, 0), 1)
-    cv2.putText(frame, 'FPS: {:.1f}'.format(
-        fps), (10, 20), cv2.FONT_HERSHEY_COMPLEX_SMALL, 1, (0, 255, 0), 1, cv2.LINE_AA)
+    cv2.putText(frame, f'FPS: {fps:.2f} Pitch (deg): {pitch*180./np.pi:.2f} Yaw (deg): {yaw*180./np.pi:.2f}', (10, 20), cv2.FONT_HERSHEY_COMPLEX_SMALL, 1, (0, 255, 0), 1, cv2.LINE_AA)
     return frame
 
 

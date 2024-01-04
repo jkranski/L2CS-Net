@@ -3,6 +3,8 @@ import copy
 from pathlib import Path
 import os
 import joblib
+import matplotlib
+matplotlib.use('TkAgg')
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
@@ -13,7 +15,7 @@ import time
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
 import pandas as pd
-from wlf.calibration_tools.regression_nn import RegressionNeuralNetwork
+from wlf.calibration_tools.regression_nn import RegressionNeuralNetwork, ClassificationNeuralNetwork
 
 
 #TODO: Try out classifier model with 8 bins
@@ -23,17 +25,19 @@ def parse_args():
         description='Model training to map from detected gaze vector to screen pierce point')
     parser.add_argument(
         '--data_timestr', dest='data_timestr', help='Timestring for training data',
-        default="20231215-154754", type=str)
+        default="20231221-160548", type=str)
     parser.add_argument(
         '--model_dir', dest='model_dir', help='Relative path for model directory',
         default="calibration_models", type=str)
     parser.add_argument(
         '--scale_data', dest='scale_data', default=True, action='store_true')
+    parser.add_argument(
+        '--classification', dest='classification', default=False, action='store_true')
 
     return parser.parse_args()
 
 
-def load_data(data_timestring):
+def load_data(data_timestring, classification=True):
     """
     Give path relative to calibration_data folder
     """
@@ -55,8 +59,25 @@ def load_data(data_timestring):
     data_cols = ["Bbox Center X", "Bbox Center Y",
                  "BBox Width", "Bbox Height",
                  "Yaw", "Pitch"]
-    target_cols = ["Gaze Target - U"]
+    for i in ["Gaze Target Index - X", "Gaze Target Index - Y"]:
+        data_df[i] = data_df[i].astype(int)
+    target_cols = ["Gaze Target Index - X"] if classification else ["Gaze Target - U"]
     return data_df[data_cols].to_numpy(), data_df[target_cols].to_numpy()
+
+
+def get_model(classification=True, learning_rate=1e-3, model_weight_decay=1e-4):
+    if classification:
+        nn_model = ClassificationNeuralNetwork().to(device)
+        print(nn_model)
+        loss_function = nn.CrossEntropyLoss()
+        nn_optimizer = optim.Adam(nn_model.parameters(), lr=learning_rate, weight_decay=model_weight_decay)
+    else:
+        nn_model = RegressionNeuralNetwork().to(device)
+        print(nn_model)
+        # loss function and optimizer
+        loss_function = nn.MSELoss()  # mean square error
+        nn_optimizer = optim.Adam(nn_model.parameters(), lr=learning_rate, weight_decay=model_weight_decay)
+    return nn_model, loss_function, nn_optimizer
 
 
 if __name__ == '__main__':
@@ -65,6 +86,7 @@ if __name__ == '__main__':
     data_timestr = args.data_timestr
     scale_data = args.scale_data
     model_dir = args.model_dir
+    classification = args.classification
 
     device = (
         "cuda"
@@ -76,7 +98,7 @@ if __name__ == '__main__':
     print(f"Using {device} device")
 
     # Read data
-    data, target = load_data(data_timestr)
+    data, target = load_data(data_timestr, classification)
     X, y = data, target
 
     if scale_data:
@@ -84,8 +106,6 @@ if __name__ == '__main__':
         X = sc.fit_transform(X)
         Path(f"./{model_dir}").mkdir(exist_ok=True)
         joblib.dump(sc, f"{model_dir}\\{train_timestr}_{data_timestr}_scalar.bin", compress=True)
-        #TODO: Don't hardcode screen width
-        #y = y/1920.
 
     # train-test split for model evaluation
     X_train, X_test, y_train, y_test = train_test_split(X, y, train_size=0.8, shuffle=True)
@@ -100,24 +120,27 @@ if __name__ == '__main__':
     y_train = y_train.to(device)
     X_test = X_test.to(device)
     y_test = y_test.to(device)
+    if classification:
+        y_train = y_train.flatten().to(int)
+        y_test = y_test.flatten().to(int)
 
-    model = RegressionNeuralNetwork().to(device)
-    print(model)
+    model, loss_fn, optimizer = get_model(classification)
 
-    # loss function and optimizer
-    loss_fn = nn.MSELoss()  # mean square error
-    optimizer = optim.Adam(model.parameters(), lr=0.1, weight_decay=1e-2)
-
-    n_epochs = 10000  # number of epochs to run
+    n_epochs = 1000  # number of epochs to run
     batch_size = 4096  # size of each batch
     batch_start = torch.arange(0, len(X_train), batch_size)
 
     # Hold the best model
-    best_mse = np.inf  # init to infinity
+    best_error = np.inf  # init to infinity
     best_weights = None
-    history = []
+    train_loss_history = []
+    test_loss_history = []
+    train_acc_history = []
+    test_acc_history = []
 
     for epoch in range(n_epochs):
+        epoch_loss = []
+        epoch_acc = []
         model.train()
         # print(f"Epoch: {epoch}")
         with tqdm.tqdm(batch_start, unit="batch", mininterval=0, disable=False) as bar:
@@ -126,44 +149,65 @@ if __name__ == '__main__':
                 # take a batch
                 X_batch = X_train[start:start + batch_size]
                 y_batch = y_train[start:start + batch_size]
-                # Move to device
-                #X_batch = X_batch.to(device)
-                #y_batch = y_batch.to(device)
+
                 # forward pass
                 y_pred = model(X_batch)
                 loss = loss_fn(y_pred, y_batch)
 
-                #u_pred, v_pred = model(X_batch)
-                #loss_u = loss_fn(u_pred, y_batch[:, 0])
-                #loss_v = loss_fn(v_pred, y_batch[:, 1])
-                #loss = loss_u + loss_v
                 # backward pass
                 optimizer.zero_grad()
                 loss.backward()
                 # update weights
                 optimizer.step()
-                # print progress
-                bar.set_postfix(mse=float(loss))
+                # print progress and store metrics
+                if classification:
+                    acc = float((torch.argmax(y_pred, 1) == y_batch).sum())/len(y_batch)
+                else:
+                    acc = 0.
+                epoch_acc.append(acc)
+                epoch_loss.append(float(loss))
+                bar.set_postfix(error=float(loss),
+                                acc=acc)
         # evaluate accuracy at end of each epoch
         model.eval()
         y_pred = model(X_test)
-        mse = loss_fn(y_pred, y_test)
-        #u_pred, v_pred = model(X_test)
-        #loss_u = loss_fn(u_pred, y_test[:, 0])
-        #loss_v = loss_fn(v_pred, y_test[:, 1])
-        #mse = loss_u + loss_v
-        mse = float(mse)
-        history.append(mse)
-        #print(f"MSE: {mse}")
-        if mse < best_mse:
-            best_mse = mse
+        test_loss = loss_fn(y_pred, y_test)
+
+        test_loss = float(test_loss)
+        if classification:
+            test_acc = float((torch.argmax(y_pred, 1) == y_test).sum()) / len(y_test)
+            # If interested in filtering based on confidence:
+            # threshold = 0.50
+            # y_pred_probs = torch.softmax(y_pred, dim=1)
+            # count_above_threshold = (y_pred_probs.max(dim=1).values > threshold).sum() / len(y_pred_probs
+        else:
+            test_acc = 0.
+
+        test_loss_history.append(test_loss)
+        test_acc_history.append(test_acc)
+        train_loss_history.append(np.mean(epoch_loss))
+        train_acc_history.append(np.mean(epoch_acc))
+        if test_loss < best_error:
+            best_error = test_loss
             best_weights = copy.deepcopy(model.state_dict())
 
     # restore model and return best accuracy
     model.load_state_dict(best_weights)
 
     torch.save(model.state_dict(), os.path.join(os.getcwd(), f"{model_dir}\\{train_timestr}_{data_timestr}_model.ckpt"))
-    print("MSE: %.2f" % best_mse)
-    print("RMSE: %.2f" % np.sqrt(best_mse))
-    plt.plot(history)
+    print("Error: %.2f" % best_error)
+    print("RM Error: %.2f" % np.sqrt(best_error))
+    error_type = "Cross Entropy" if classification else "MSE"
+    plt.plot(train_loss_history, label="train")
+    plt.plot(test_loss_history, label="test")
+    plt.xlabel("Epochs")
+    plt.ylabel(error_type)
+    plt.legend()
+    plt.show()
+
+    plt.plot(train_acc_history, label="train")
+    plt.plot(test_acc_history, label="test")
+    plt.xlabel("Epochs")
+    plt.ylabel("Accuracy")
+    plt.legend()
     plt.show()
