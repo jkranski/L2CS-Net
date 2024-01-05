@@ -119,8 +119,8 @@ if __name__ == '__main__':
     cap = cv2.VideoCapture(cam)
     # Set resolution
     print("Frame default resolution: (" + str(cap.get(cv2.CAP_PROP_FRAME_WIDTH)) + "; " + str(cap.get(cv2.CAP_PROP_FRAME_HEIGHT)) + ")")
-    cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1920)
-    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 1080)
+    cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1280)
+    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
     print("Frame resolution set to: (" + str(cap.get(cv2.CAP_PROP_FRAME_WIDTH)) + "; " + str(cap.get(cv2.CAP_PROP_FRAME_HEIGHT)) + ")")
 
 
@@ -132,7 +132,7 @@ if __name__ == '__main__':
     sender = GazeSender(redis_client)
 
     #Set up OpenCV Window
-    cv2.namedWindow("Demo")
+    #cv2.namedWindow("Demo")
 
     with torch.no_grad():
         while True:
@@ -185,8 +185,9 @@ if __name__ == '__main__':
 
                     draw_gaze(x_min, y_min, bbox_width, bbox_height, frame,
                               (yaw_predicted, pitch_predicted), color=(0, 0, 255))
-                    projection_input = torch.tensor([bbox_center_x, bbox_center_y,
-                                                     bbox_width, bbox_height,
+                    # 1920/1280 to account for training at 1920x1080 and running at 1280x720
+                    projection_input = torch.tensor([1920./1280.*bbox_center_x, 1920./1280.*bbox_center_y,
+                                                     1920./1280.*bbox_width, 1920./1280.*bbox_height,
                                                      yaw_predicted, pitch_predicted],
                                                     dtype=torch.float32)
                     projection_input = input_scalar.transform(projection_input.reshape(1, -1))
@@ -200,6 +201,7 @@ if __name__ == '__main__':
                     cv2.rectangle(frame, (x_min, y_min),
                                   (x_max, y_max), (0, 255, 0), 1)
                     myFPS = 1.0 / (time.time() - start_fps)
+                    print(f"FPS: {myFPS}")
                     if classification:
                         responses = ["A", "B", "C", "D"]
                         centroids = [0.125, 0.375, 0.625, 0.875]
@@ -218,8 +220,8 @@ if __name__ == '__main__':
                         elif scaled_output > 0.85:
                             response = "D"
 
-                    cv2.putText(frame, f"Quadrant: {response}", (10, 20),
-                                cv2.FONT_HERSHEY_COMPLEX_SMALL, 1, (0, 255, 0), 1, cv2.LINE_AA)
+                    # cv2.putText(frame, f"Quadrant: {response}", (10, 20),
+                    #             cv2.FONT_HERSHEY_COMPLEX_SMALL, 1, (0, 255, 0), 1, cv2.LINE_AA)
 
                     net_face = Face(camera_centroid_norm=Point2DF(x=float(bbox_center_x)/frame.shape[1],
                                                                   y=float(bbox_center_y)/frame.shape[0]),
@@ -230,11 +232,11 @@ if __name__ == '__main__':
 
                     if y_pred_probs.max(dim=1).values > 0.75:
                         net_faces.append(net_face)
-                    print(net_face)
+                    # print(net_face)
 
                 sender.send(GazeData(faces=net_faces))
 
-            cv2.imshow("Demo", frame)
+            # cv2.imshow("Demo", frame)
             if cv2.waitKey(1) & 0xFF == 27:
                 break
         cap.release()
