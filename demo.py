@@ -39,10 +39,10 @@ def parse_args():
     parser.add_argument(
         '--training_timestr', dest='training_timestr', help='Timestring for training time of projection mapping model '
                                                             'and scalar',
-        default="20240104-162746", type=str)
+        default="20240105-144941", type=str)
     parser.add_argument(
         '--data_timestr', dest='data_timestr', help='Timestring for data collection',
-        default="2024", type=str)
+        default="20240105", type=str)
     parser.add_argument(
         '--cam', dest='cam_id', help='Camera device id to use [0]',
         default=1, type=int)
@@ -117,6 +117,12 @@ if __name__ == '__main__':
     x = 0
 
     cap = cv2.VideoCapture(cam)
+    # Set resolution
+    print("Frame default resolution: (" + str(cap.get(cv2.CAP_PROP_FRAME_WIDTH)) + "; " + str(cap.get(cv2.CAP_PROP_FRAME_HEIGHT)) + ")")
+    cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1920)
+    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 1080)
+    print("Frame resolution set to: (" + str(cap.get(cv2.CAP_PROP_FRAME_WIDTH)) + "; " + str(cap.get(cv2.CAP_PROP_FRAME_HEIGHT)) + ")")
+
 
     # Check if the webcam is opened correctly
     if not cap.isOpened():
@@ -187,6 +193,7 @@ if __name__ == '__main__':
                     projection_input = torch.tensor(projection_input, dtype=torch.float32)
                     y_pred = projection_model(projection_input.to(gpu))
                     if classification:
+                        y_pred_probs = torch.softmax(y_pred, dim=1)
                         y_pred = torch.argmax(y_pred, 1)
 
                     y_pred = y_pred.cpu().detach().numpy()
@@ -195,7 +202,10 @@ if __name__ == '__main__':
                     myFPS = 1.0 / (time.time() - start_fps)
                     if classification:
                         responses = ["A", "B", "C", "D"]
+                        centroids = [0.125, 0.375, 0.625, 0.875]
                         response = responses[int(y_pred[0])]
+                        centroid = centroids[int(y_pred[0])]
+
                     else:
                         scaled_output = (y_pred[0,0]-500)/2500.
                         response = "None"
@@ -211,13 +221,16 @@ if __name__ == '__main__':
                     cv2.putText(frame, f"Quadrant: {response}", (10, 20),
                                 cv2.FONT_HERSHEY_COMPLEX_SMALL, 1, (0, 255, 0), 1, cv2.LINE_AA)
 
-                    net_face = Face(camera_centroid_norm=Point2DF(x=float(bbox_center_x)/frame.shape[1], y=float(bbox_center_y)/frame.shape[0]),
+                    net_face = Face(camera_centroid_norm=Point2DF(x=float(bbox_center_x)/frame.shape[1],
+                                                                  y=float(bbox_center_y)/frame.shape[0]),
                                     gaze_vector=Point3DF(x=0.0, y=0.0, z=0.0),
                                     gaze_screen_intersection_norm=Point2DF(
-                                        x=-1., y=0.0)
+                                        x=centroid, y=0.0)
                                     )
 
-                    net_faces.append(net_face)
+                    if y_pred_probs.max(dim=1).values > 0.75:
+                        net_faces.append(net_face)
+                    print(net_face)
 
                 sender.send(GazeData(faces=net_faces))
 
