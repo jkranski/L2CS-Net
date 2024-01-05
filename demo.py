@@ -21,8 +21,8 @@ from face_detection import RetinaFace
 from model import L2CS
 
 from wlf import GazeData, Face, Point2DF, Point3DF, GazeSender
-from wlf.calibration_tools.regression_nn import RegressionNeuralNetwork
-#import redis
+from wlf.calibration_tools.regression_nn import RegressionNeuralNetwork, ClassificationNeuralNetwork
+import redis
 
 #TODO: Cleanup old code.
 
@@ -39,16 +39,18 @@ def parse_args():
     parser.add_argument(
         '--training_timestr', dest='training_timestr', help='Timestring for training time of projection mapping model '
                                                             'and scalar',
-        default="20231215-172103", type=str)
+        default="20240104-162746", type=str)
     parser.add_argument(
         '--data_timestr', dest='data_timestr', help='Timestring for data collection',
-        default="20231215-154754", type=str)
+        default="2024", type=str)
     parser.add_argument(
         '--cam', dest='cam_id', help='Camera device id to use [0]',
-        default=0, type=int)
+        default=1, type=int)
     parser.add_argument(
         '--arch', dest='arch', help='Network architecture, can be: ResNet18, ResNet34, ResNet50, ResNet101, ResNet152',
         default='ResNet50', type=str)
+    parser.add_argument(
+        '--classification', dest='classification', default=False, action='store_true')
 
     args = parser.parse_args()
     return args
@@ -81,6 +83,7 @@ if __name__ == '__main__':
     cam = args.cam_id
     gpu = select_device(args.gpu_id, batch_size=batch_size)
     snapshot_path = args.snapshot
+    classification = args.classification
 
     transformations = transforms.Compose([
         transforms.Resize(448),
@@ -101,7 +104,7 @@ if __name__ == '__main__':
 
     #proj_model_timestr = args.projection_timestr
 
-    projection_model = RegressionNeuralNetwork().to(gpu)
+    projection_model = ClassificationNeuralNetwork().to(gpu) if classification else RegressionNeuralNetwork().to(gpu)
     model_timestr = f"{args.training_timestr}_{args.data_timestr}"
     projection_model.load_state_dict(torch.load(os.path.join(os.getcwd(), f"wlf\\calibration_tools\\calibration_models\\{model_timestr}_model.ckpt")))
     projection_model.eval()
@@ -119,8 +122,8 @@ if __name__ == '__main__':
     if not cap.isOpened():
         raise IOError("Cannot open webcam")
 
-    #redis_client = redis.Redis()
-    #sender = GazeSender(redis_client)
+    redis_client = redis.Redis()
+    sender = GazeSender(redis_client)
 
     #Set up OpenCV Window
     cv2.namedWindow("Demo")
@@ -182,23 +185,29 @@ if __name__ == '__main__':
                                                     dtype=torch.float32)
                     projection_input = input_scalar.transform(projection_input.reshape(1, -1))
                     projection_input = torch.tensor(projection_input, dtype=torch.float32)
-                    u_pred = projection_model(projection_input.to(gpu))
-                    u_pred = u_pred.cpu().detach().numpy()
+                    y_pred = projection_model(projection_input.to(gpu))
+                    if classification:
+                        y_pred = torch.argmax(y_pred, 1)
+
+                    y_pred = y_pred.cpu().detach().numpy()
                     cv2.rectangle(frame, (x_min, y_min),
                                   (x_max, y_max), (0, 255, 0), 1)
                     myFPS = 1.0 / (time.time() - start_fps)
-                    scaled_output = (u_pred[0,0]-500)/2500.
-                    response = "None"
-                    if scaled_output < 0.15:
-                        response = "A"
-                    elif scaled_output > 0.25 and scaled_output < 0.45:
-                        response = "B"
-                    elif scaled_output > 0.55 and scaled_output < 0.75:
-                        response = "C"
-                    elif scaled_output > 0.85:
-                        response = "D"
-                    # cv2.putText(frame, f"U Pred: {(u_pred[0,0]-500)/2500.:.3f}", (10, 20),
-                    #             cv2.FONT_HERSHEY_COMPLEX_SMALL, 1, (0, 255, 0), 1, cv2.LINE_AA)
+                    if classification:
+                        responses = ["A", "B", "C", "D"]
+                        response = responses[int(y_pred[0])]
+                    else:
+                        scaled_output = (y_pred[0,0]-500)/2500.
+                        response = "None"
+                        if scaled_output < 0.15:
+                            response = "A"
+                        elif scaled_output > 0.25 and scaled_output < 0.45:
+                            response = "B"
+                        elif scaled_output > 0.55 and scaled_output < 0.75:
+                            response = "C"
+                        elif scaled_output > 0.85:
+                            response = "D"
+
                     cv2.putText(frame, f"Quadrant: {response}", (10, 20),
                                 cv2.FONT_HERSHEY_COMPLEX_SMALL, 1, (0, 255, 0), 1, cv2.LINE_AA)
 
@@ -210,7 +219,7 @@ if __name__ == '__main__':
 
                     net_faces.append(net_face)
 
-                #sender.send(GazeData(faces=net_faces))
+                sender.send(GazeData(faces=net_faces))
 
             cv2.imshow("Demo", frame)
             if cv2.waitKey(1) & 0xFF == 27:

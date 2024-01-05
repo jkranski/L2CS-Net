@@ -5,11 +5,11 @@ class ClassificationNeuralNetwork(nn.Module):
     def __init__(self):
         super().__init__()
         self.linear_relu_stack = nn.Sequential(
-            nn.Linear(6, 64),
+            nn.Linear(6, 32),
             nn.ReLU(),
-            nn.Linear(64, 64),
+            nn.Linear(32, 32),
             nn.ReLU(),
-            nn.Linear(64, 4)  # Four quadrants
+            nn.Linear(32, 4)  # Four quadrants
         )
 
     def forward(self, x):

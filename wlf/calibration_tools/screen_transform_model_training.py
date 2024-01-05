@@ -2,6 +2,7 @@ import argparse
 import copy
 from pathlib import Path
 import os
+import glob
 import joblib
 import matplotlib
 matplotlib.use('TkAgg')
@@ -25,7 +26,7 @@ def parse_args():
         description='Model training to map from detected gaze vector to screen pierce point')
     parser.add_argument(
         '--data_timestr', dest='data_timestr', help='Timestring for training data',
-        default="20231221-160548", type=str)
+        default="2024", type=str)
     parser.add_argument(
         '--model_dir', dest='model_dir', help='Relative path for model directory',
         default="calibration_models", type=str)
@@ -41,8 +42,7 @@ def load_data(data_timestring, classification=True):
     """
     Give path relative to calibration_data folder
     """
-    full_path = os.path.join(os.getcwd(), "calibration_data")
-    full_path = os.path.join(full_path, data_timestring)
+    calibration_data_dir = os.path.join(os.getcwd(), "calibration_data")
     cols = ["Bbox Center X", "Bbox Center Y",
             "BBox Width", "Bbox Height",
             "Yaw", "Pitch",
@@ -51,10 +51,12 @@ def load_data(data_timestring, classification=True):
             "Gaze Target - U",
             "Gaze Target - V"]
     data_list = []
-    for i in range(4):
-        for j in range(4):
-            x = np.load(os.path.join(full_path, f"target_{i}_{j}.npy"))
-            data_list.extend(x.tolist())
+    # Get all folders matching data_timestr. Should probably allow specification of search string
+    for data_dir in glob.glob(calibration_data_dir + f"/{data_timestr}*"):
+        for i in range(4):
+            for j in range(4):
+                x = np.load(os.path.join(data_dir, f"target_{i}_{j}.npy"))
+                data_list.extend(x.tolist())
     data_df = pd.DataFrame(data_list, columns=cols)
     data_cols = ["Bbox Center X", "Bbox Center Y",
                  "BBox Width", "Bbox Height",
@@ -126,7 +128,7 @@ if __name__ == '__main__':
 
     model, loss_fn, optimizer = get_model(classification)
 
-    n_epochs = 1000  # number of epochs to run
+    n_epochs = 20000  # number of epochs to run
     batch_size = 4096  # size of each batch
     batch_start = torch.arange(0, len(X_train), batch_size)
 
