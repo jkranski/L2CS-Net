@@ -23,6 +23,8 @@ from model import L2CS
 from wlf import GazeData, Face, Point2DF, Point3DF, GazeSender
 from wlf.calibration_tools.regression_nn import RegressionNeuralNetwork, ClassificationNeuralNetwork
 import redis
+import io
+import base64
 
 #TODO: Cleanup old code.
 
@@ -121,6 +123,8 @@ if __name__ == '__main__':
     print("Frame default resolution: (" + str(cap.get(cv2.CAP_PROP_FRAME_WIDTH)) + "; " + str(cap.get(cv2.CAP_PROP_FRAME_HEIGHT)) + ")")
     cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1280)
     cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
+    # cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1920)
+    # cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 1080)
     print("Frame resolution set to: (" + str(cap.get(cv2.CAP_PROP_FRAME_WIDTH)) + "; " + str(cap.get(cv2.CAP_PROP_FRAME_HEIGHT)) + ")")
 
 
@@ -186,8 +190,10 @@ if __name__ == '__main__':
                     draw_gaze(x_min, y_min, bbox_width, bbox_height, frame,
                               (yaw_predicted, pitch_predicted), color=(0, 0, 255))
                     # 1920/1280 to account for training at 1920x1080 and running at 1280x720
-                    projection_input = torch.tensor([1920./1280.*bbox_center_x, 1920./1280.*bbox_center_y,
-                                                     1920./1280.*bbox_width, 1920./1280.*bbox_height,
+                    scale_factor = 1920./1280.
+                    # scale_factor = 1.
+                    projection_input = torch.tensor([scale_factor*bbox_center_x, scale_factor*bbox_center_y,
+                                                     scale_factor*bbox_width, scale_factor*bbox_height,
                                                      yaw_predicted, pitch_predicted],
                                                     dtype=torch.float32)
                     projection_input = input_scalar.transform(projection_input.reshape(1, -1))
@@ -223,20 +229,25 @@ if __name__ == '__main__':
                     # cv2.putText(frame, f"Quadrant: {response}", (10, 20),
                     #             cv2.FONT_HERSHEY_COMPLEX_SMALL, 1, (0, 255, 0), 1, cv2.LINE_AA)
 
+                    jpeg_img = io.BytesIO()
+                    im_pil.save(jpeg_img, format='JPEG')
                     net_face = Face(camera_centroid_norm=Point2DF(x=float(bbox_center_x)/frame.shape[1],
                                                                   y=float(bbox_center_y)/frame.shape[0]),
                                     gaze_vector=Point3DF(x=0.0, y=0.0, z=0.0),
                                     gaze_screen_intersection_norm=Point2DF(
-                                        x=centroid, y=0.0)
+                                        x=centroid, y=0.0),
+                                    face_patch_jpeg_base64=base64.b64encode(
+                                        jpeg_img.getvalue())
                                     )
 
                     if y_pred_probs.max(dim=1).values > 0.75:
                         net_faces.append(net_face)
+                        print(f"response: {response}")
                     # print(net_face)
 
                 sender.send(GazeData(faces=net_faces))
 
-            # cv2.imshow("Demo", frame)
+            cv2.imshow("Demo", frame)
             if cv2.waitKey(1) & 0xFF == 27:
                 break
         cap.release()

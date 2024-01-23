@@ -17,7 +17,7 @@ class Face(BaseModel):
     camera_centroid_norm: Point2DF
     gaze_vector: Point3DF
     gaze_screen_intersection_norm: Point2DF
-
+    face_patch_jpeg_base64: str | None = None
 
 class GazeData(BaseModel):
     faces: List[Face] = []
