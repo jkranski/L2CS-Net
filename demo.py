@@ -136,7 +136,7 @@ if __name__ == '__main__':
     sender = GazeSender(redis_client)
 
     #Set up OpenCV Window
-    #cv2.namedWindow("Demo")
+    cv2.namedWindow("Demo")
 
     with torch.no_grad():
         while True:
@@ -145,6 +145,7 @@ if __name__ == '__main__':
             frame = cv2.flip(frame, 1)
             faces = detector(frame)
             quadrants = [0, 0, 0, 0, 0]
+            gaze_draw_data = []
             if faces is not None:
                 net_faces: list[Face] = []
                 for box, landmarks, score in faces:
@@ -187,8 +188,8 @@ if __name__ == '__main__':
                     pitch_predicted = pitch_predicted.cpu().detach().numpy() * np.pi/180.0
                     yaw_predicted = yaw_predicted.cpu().detach().numpy() * np.pi/180.0
 
-                    draw_gaze(x_min, y_min, bbox_width, bbox_height, frame,
-                              (yaw_predicted, pitch_predicted), color=(0, 0, 255))
+                    gaze_draw_data.append([x_min, y_min, bbox_width, bbox_height, yaw_predicted, pitch_predicted])
+
                     # 1920/1280 to account for training at 1920x1080 and running at 1280x720
                     scale_factor = 1920./1280.
                     # scale_factor = 1.
@@ -204,8 +205,7 @@ if __name__ == '__main__':
                         y_pred = torch.argmax(y_pred, 1)
 
                     y_pred = y_pred.cpu().detach().numpy()
-                    cv2.rectangle(frame, (x_min, y_min),
-                                  (x_max, y_max), (0, 255, 0), 1)
+
                     myFPS = 1.0 / (time.time() - start_fps)
                     print(f"FPS: {myFPS}")
                     if classification:
@@ -215,19 +215,16 @@ if __name__ == '__main__':
                         centroid = centroids[int(y_pred[0])]
 
                     else:
-                        scaled_output = (y_pred[0,0]-500)/2500.
+                        scaled_output = (y_pred[0, 0]-500)/2500.
                         response = "None"
                         if scaled_output < 0.15:
                             response = "A"
-                        elif scaled_output > 0.25 and scaled_output < 0.45:
+                        elif 0.25 < scaled_output < 0.45:
                             response = "B"
-                        elif scaled_output > 0.55 and scaled_output < 0.75:
+                        elif 0.55 < scaled_output < 0.75:
                             response = "C"
                         elif scaled_output > 0.85:
                             response = "D"
-
-                    # cv2.putText(frame, f"Quadrant: {response}", (10, 20),
-                    #             cv2.FONT_HERSHEY_COMPLEX_SMALL, 1, (0, 255, 0), 1, cv2.LINE_AA)
 
                     jpeg_img = io.BytesIO()
                     im_pil.save(jpeg_img, format='JPEG')
@@ -245,6 +242,9 @@ if __name__ == '__main__':
                         print(f"response: {response}")
                     # print(net_face)
 
+                for x_min, y_min, bbox_width, bbox_height, yaw_predicted, pitch_predicted in gaze_draw_data:
+                    draw_gaze(x_min, y_min, bbox_width, bbox_height, frame,
+                              (yaw_predicted, pitch_predicted), color=(0, 0, 255))
                 sender.send(GazeData(faces=net_faces))
 
             cv2.imshow("Demo", frame)

@@ -48,6 +48,8 @@ def draw_gaze(a,b,c,d,image_in, pitchyaw, thickness=2, color=(255, 255, 0),sclae
     cv2.arrowedLine(image_out, tuple(np.round(pos).astype(np.int32)),
                    tuple(np.round([pos[0] + dx, pos[1] + dy]).astype(int)), color,
                    thickness, cv2.LINE_AA, tipLength=0.18)
+    cv2.rectangle(image_out, (a, b),
+                  (a + c, b + d), (0, 255, 0), 1)
     return image_out   
 
 
