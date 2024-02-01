@@ -66,7 +66,7 @@ class GazeDataCollection:
         #             label_x, label_y,
         #             label_u, label_v)
         # Label_x/y: 0 -> 3, for row, column _u/v for pixel value
-        self.gaze_data = np.zeros((150, 10), dtype=np.float32)
+        self.gaze_data = np.zeros((50, 10), dtype=np.float32)
         self.capture_data = False
         self.capture_idx = 0
         self.label = Point2D(x=0, y=0)
@@ -108,6 +108,7 @@ class GazeDataCollection:
         self.cam = cv2.VideoCapture(cam_id)
         self.cam.set(cv2.CAP_PROP_FRAME_WIDTH, 1920)
         self.cam.set(cv2.CAP_PROP_FRAME_HEIGHT, 1080)
+
 
         # Check if the webcam is opened correctly
         if not self.cam.isOpened():

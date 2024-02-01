@@ -135,6 +135,7 @@ if __name__ == '__main__':
     # Hold the best model
     best_error = np.inf  # init to infinity
     best_weights = None
+    best_acc = 0.
     train_loss_history = []
     test_loss_history = []
     train_acc_history = []
@@ -204,6 +205,7 @@ if __name__ == '__main__':
         if test_loss < best_error:
             best_error = test_loss
             best_weights = copy.deepcopy(model.state_dict())
+            best_acc = test_acc
 
     # restore model and return best accuracy
     model.load_state_dict(best_weights)
@@ -211,6 +213,8 @@ if __name__ == '__main__':
     torch.save(model.state_dict(), os.path.join(os.getcwd(), f"{model_dir}\\{train_timestr}_{data_timestr}_model.ckpt"))
     print("Error: %.2f" % best_error)
     print("RM Error: %.2f" % np.sqrt(best_error))
+    print("Best Model Acc: %.2f" % best_acc)
+
     error_type = "Cross Entropy" if classification else "MSE"
     plt.plot(train_loss_history, label="train")
     plt.plot(test_loss_history, label="test")
