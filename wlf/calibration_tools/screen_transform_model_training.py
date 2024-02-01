@@ -38,7 +38,7 @@ def parse_args():
     return parser.parse_args()
 
 
-def load_data(data_timestring, classification=True):
+def load_data(data_timestring, classification=True, cleaned_prefix="", directory_list=None):
     """
     Give path relative to calibration_data folder
     """
@@ -51,11 +51,15 @@ def load_data(data_timestring, classification=True):
             "Gaze Target - U",
             "Gaze Target - V"]
     data_list = []
-    # Get all folders matching data_timestr. Should probably allow specification of search string
-    for data_dir in glob.glob(calibration_data_dir + f"/{data_timestr}*"):
-        for i in range(4):
-            for j in range(4):
-                x = np.load(os.path.join(data_dir, f"target_{i}_{j}.npy"))
+    if directory_list is None:
+        directory_list = glob.glob(calibration_data_dir + f"/{data_timestring}*")
+    else:
+        directory_list = [calibration_data_dir + f"/{i}" for i in directory_list]
+    # Get all folders matching data_timestring. Should probably allow specification of search string
+    for data_dir in directory_list:
+        for col in range(4):
+            for row in range(4):
+                x = np.load(os.path.join(data_dir, f"{cleaned_prefix}target_{col}_{row}.npy"))
                 data_list.extend(x.tolist())
     data_df = pd.DataFrame(data_list, columns=cols)
     data_cols = ["Bbox Center X", "Bbox Center Y",
@@ -100,7 +104,10 @@ if __name__ == '__main__':
     print(f"Using {device} device")
 
     # Read data
-    data, target = load_data(data_timestr, classification)
+    good_dir = ['20240131-212915', '20240131-195237', '20240131-212331',
+                '20240131-220105', '20240131-221849', '20240131-222644']
+    mid_dir = ['20240131-211542', '20240131-201733', '20240131-201217']
+    data, target = load_data(data_timestr, classification, cleaned_prefix="Yaw_cleaned_", directory_list=good_dir.extend(mid_dir))
     X, y = data, target
 
     if scale_data:
@@ -128,7 +135,7 @@ if __name__ == '__main__':
 
     model, loss_fn, optimizer = get_model(classification)
 
-    n_epochs = 20000  # number of epochs to run
+    n_epochs = 10000  # number of epochs to run
     batch_size = 4096  # size of each batch
     batch_start = torch.arange(0, len(X_train), batch_size)
 
