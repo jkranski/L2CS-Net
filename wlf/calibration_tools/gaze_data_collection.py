@@ -124,7 +124,7 @@ class GazeDataCollection:
         self.window_y = y
         self.window_w = w
         self.window_h = h
-        self.canvas_img = np.zeros((h, w, 3))
+        self.canvas_img = np.ones((h, w, 3))
 
     def detect_faces(self, input_img):
         return self.detector(input_img)
@@ -197,7 +197,7 @@ class GazeDataCollection:
                                 self.capture_idx = 0
                                 with open(f"{self.session_path}/target_{self.label.x}_{self.label.y}.npy", 'wb') as f:
                                     np.save(f, self.gaze_data)
-                                self.canvas_img[:, :, :] = 0
+                                self.canvas_img[:, :, :] = 1
                                 if self.label.x == 3:
                                     self.label.x = 0
                                     self.label.y += 1
