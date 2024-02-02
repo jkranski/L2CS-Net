@@ -53,7 +53,7 @@ def greater_than(input_df, col_name, greater_than_threshold):
 
 def clean_angular_data(session_name,
                        criteria_col="Yaw",
-                       criteria_threshold=15 * np.pi / 180.,
+                       criteria_threshold=35 * np.pi / 180.,
                        criteria=distance_from_median):
     # Criteria returns index of elements to drop
     cols = ["Bbox Center X", "Bbox Center Y",
@@ -71,7 +71,7 @@ def clean_angular_data(session_name,
             df = pd.DataFrame(data_list, columns=cols)
             index = criteria(df, criteria_col, criteria_threshold)
             cleaned_df = df.drop(index)
-            cleaned_filepath = f"./calibration_data/{session_name}/15_{criteria_col}_cleaned_target_{col}_{row}.npy"
+            cleaned_filepath = f"./calibration_data/{session_name}/35_{criteria_col}_cleaned_target_{col}_{row}.npy"
             np.save(cleaned_filepath, cleaned_df.to_numpy())
 
 
@@ -137,24 +137,38 @@ def plot_aggregate_session_data(session_name,
 
 # plt.ion()
 calibration_data_dir = os.path.join(os.getcwd(), "calibration_data/")
-session_names = glob.glob("2024*", root_dir=calibration_data_dir)
+session_names = glob.glob("20240201-21*", root_dir=calibration_data_dir)
 
-criteria_list = {'20240131-193321': ("Bbox Center Y", False, 800),
-                 '20240131-195237': ("Bbox Center X", True, 800),
-                 '20240131-195952': ("Bbox Center X", True, 0),
-                 '20240131-200507': ("Bbox Center X", True, 0),
-                 '20240131-201217': ("Bbox Center X", True, 0),
-                 '20240131-201733': ("Bbox Center X", True, 0),
-                 '20240131-211542': ("Bbox Center X", True, 400),
-                 '20240131-212331': ("Bbox Center X", True, 100),
-                 '20240131-212915': ("Bbox Center X", True, 0),
-                 '20240131-214227': ("Bbox Center X", True, 400),
-                 '20240131-220105': ("Bbox Center X", True, 400),
-                 '20240131-221849': ("Bbox Center X", True, 0),
-                 '20240131-222644': ("Bbox Center X", True, 400),
-                 '20240131-223332': ("Bbox Center X", True, 0),
+# criteria_list = {'20240131-193321': ("Bbox Center Y", False, 800),
+#                  '20240131-195237': ("Bbox Center X", True, 800),
+#                  '20240131-195952': ("Bbox Center X", True, 0),
+#                  '20240131-200507': ("Bbox Center X", True, 0),
+#                  '20240131-201217': ("Bbox Center X", True, 0),
+#                  '20240131-201733': ("Bbox Center X", True, 0),
+#                  '20240131-211542': ("Bbox Center X", True, 400),
+#                  '20240131-212331': ("Bbox Center X", True, 100),
+#                  '20240131-212915': ("Bbox Center X", True, 0),
+#                  '20240131-214227': ("Bbox Center X", True, 400),
+#                  '20240131-220105': ("Bbox Center X", True, 400),
+#                  '20240131-221849': ("Bbox Center X", True, 0),
+#                  '20240131-222644': ("Bbox Center X", True, 400),
+#                  '20240131-223332': ("Bbox Center X", True, 0),
+#                  }
+
+# criteria_list = {'20240201-194839': ("Bbox Center X", True, 400),
+#                  '20240201-193453': ("Bbox Center Y", False, 600),
+#                  '20240201-195417': ("Bbox Center X", True, 0),
+#                  '20240201-194216': ("Bbox Center X", True, 0),
+#                  '20240201-192719': ("Bbox Center X", True, 0),
+#                  }
+
+criteria_list = {'20240201-213457': ("Bbox Center X", True, 500),
+                 '20240201-211913': ("Bbox Center X", True, 600),
+                 '20240201-214159': ("Bbox Center X", False, 940),
+                 '20240201-212858': ("Bbox Center X", True, 0)
                  }
-clean_prefix = ""
+
+clean_prefix = "35_Yaw_cleaned_"
 clean_data = False
 plot_session = True
 plot_aggregate = False

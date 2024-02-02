@@ -41,7 +41,7 @@ def parse_args():
     parser.add_argument(
         '--training_timestr', dest='training_timestr', help='Timestring for training time of projection mapping model '
                                                             'and scalar',
-        default="20240131-202532", type=str)
+        default="20240201-221238", type=str)
     parser.add_argument(
         '--data_timestr', dest='data_timestr', help='Timestring for data collection',
         default="20240131", type=str)
@@ -191,6 +191,7 @@ if __name__ == '__main__':
                     gaze_draw_data.append([x_min, y_min, bbox_width, bbox_height, yaw_predicted, pitch_predicted])
 
                     # 1920/1280 to account for training at 1920x1080 and running at 1280x720
+                    #
                     scale_factor = 1920./1280.
                     # scale_factor = 1.
                     projection_input = torch.tensor([scale_factor*bbox_center_x, scale_factor*bbox_center_y,
@@ -239,8 +240,7 @@ if __name__ == '__main__':
                                     face_patch_jpeg_base64=base64.b64encode(
                                         jpeg_img.getvalue())
                                     )
-                    # Lowered from 0.75 due to limited training set. FIXME
-                    if y_pred_probs.max(dim=1).values > 0.20:
+                    if y_pred_probs.max(dim=1).values > 0.65:
                         net_faces.append(net_face)
                         print(f"response: {response}")
                     # print(net_face)
