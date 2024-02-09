@@ -59,8 +59,13 @@ def load_data(data_timestring, classification=True, cleaned_prefix="", directory
     for data_dir in directory_list:
         for col in range(4):
             for row in range(4):
-                x = np.load(os.path.join(data_dir, f"{cleaned_prefix}target_{col}_{row}.npy"))
-                data_list.extend(x.tolist())
+                # Added try/except to allow for sessions with incomplete captures, for fine-tuning
+                try:
+                    x = np.load(os.path.join(data_dir, f"{cleaned_prefix}target_{col}_{row}.npy"))
+                    data_list.extend(x.tolist())
+                except OSError:
+                    print(f"Failed to load data from file: "
+                          f"{os.path.join(data_dir, f'{cleaned_prefix}target_{col}_{row}.npy')}")
     data_df = pd.DataFrame(data_list, columns=cols)
     data_cols = ["Bbox Center X", "Bbox Center Y",
                  "BBox Width", "Bbox Height",

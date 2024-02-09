@@ -168,6 +168,18 @@ criteria_list = {'20240201-213457': ("Bbox Center X", True, 500),
                  '20240201-212858': ("Bbox Center X", True, 0)
                  }
 
+## OK, leaving a note here on the hacked together process for cleaning data before I forget or move on
+# 1. Get list of  folders to examine/clean (session_names). Can be directly set or based on glob and search pattern
+# 2. Set clean_data and plot_session to False, plot_aggregate to True. Want to determine cutoff threshold for detections
+#    of multiple faces
+# 3. Build criteria_list with cutoff params and values. ("Bbox Center X", True, 500) rejects all points less than 500
+# 4. Uncomment (ugly, I know) the lines for crit_name, clean_target_data under if clean_data.
+#    Comment out clean_angular_data. If we take the project forward, I'll re-write this.
+# 5. With cleaned_ files generated, switch back from step 4. Run clean_angular_data.
+# 6. Should have cleaned data with 35_Yaw_cleaned_ prefix now. Can be used for training. 35 refers to the angular band,
+#    in degrees, that will be filtered out
+# Note: This assumes each session has a person standing in one place, staring at a specific dot.
+
 clean_prefix = "35_Yaw_cleaned_"
 clean_data = False
 plot_session = True
