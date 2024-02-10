@@ -18,6 +18,7 @@ def load_target_data(filepath):
             "Gaze Target - U",
             "Gaze Target - V"]
     data_list = []
+
     x = np.load(filepath)
     data_list.extend(x)
     data_df = pd.DataFrame(data_list, columns=cols)
@@ -67,7 +68,11 @@ def clean_angular_data(session_name,
         for row in range(4):
             target_filepath = f"./calibration_data/{session_name}/cleaned_target_{col}_{row}.npy"
             data_list = []
-            data_list.extend(np.load(target_filepath))
+            try:
+                data_list.extend(np.load(target_filepath))
+            except FileNotFoundError:
+                print(f"Could not find file at: {target_filepath}")
+                continue
             df = pd.DataFrame(data_list, columns=cols)
             index = criteria(df, criteria_col, criteria_threshold)
             cleaned_df = df.drop(index)
@@ -87,7 +92,11 @@ def clean_target_data(session_name, criteria_col, criteria_threshold, less_than=
         for row in range(4):
             target_filepath = f"./calibration_data/{session_name}/target_{col}_{row}.npy"
             data_list = []
-            data_list.extend(np.load(target_filepath))
+            try:
+                data_list.extend(np.load(target_filepath))
+            except FileNotFoundError:
+                print(f"Could not load file from: {target_filepath}")
+                continue
             df = pd.DataFrame(data_list, columns=cols)
             if less_than:
                 index = df[df[criteria_col] < criteria_threshold].index
@@ -111,10 +120,13 @@ def plot_session_data(session_name, x_col="Bbox Center X",
     for col in range(4):
         for row in range(4):
             target_filepath = f"./calibration_data/{session_name}/{clean_prefix}target_{col}_{row}.npy"
-            target_data = load_target_data(target_filepath)
-            # data is stored with col_row.npy form, so row and col are flipped to make subplots line up with data points
-            sns.scatterplot(x=target_data[x_col], y=target_data[y_col], ax=axes[row, col]).set_title(
-                f"row={row}, col={col}")
+            try:
+                target_data = load_target_data(target_filepath)
+                # data is stored with col_row.npy form, so row and col are flipped to make subplots line up with data points
+                sns.scatterplot(x=target_data[x_col], y=target_data[y_col], ax=axes[row, col]).set_title(
+                    f"row={row}, col={col}")
+            except FileNotFoundError:
+                print(f"Could not find file at: {target_filepath}")
 
 
 def plot_aggregate_session_data(session_name,
@@ -123,21 +135,27 @@ def plot_aggregate_session_data(session_name,
                                 x_lim=(0, 1920),
                                 y_lim=(0, 1200),
                                 clean_prefix=""):
+    agg_df = None
     for col in range(4):
         for row in range(4):
             ind_file = f"./calibration_data/{session_name}/{clean_prefix}target_{col}_{row}.npy"
-            target_data = load_target_data(ind_file)
-            if col == 0 and row == 0:
-                agg_df = target_data
-            else:
-                agg_df = pd.concat([agg_df, target_data], ignore_index=True)
+            # Added try/except to allow for sessions with incomplete captures, for fine-tuning
+            try:
+                target_data = load_target_data(ind_file)
+                if agg_df is None:
+                    agg_df = target_data
+                else:
+                    agg_df = pd.concat([agg_df, target_data], ignore_index=True)
+            except FileNotFoundError:
+                print(f"File not found at: {ind_file}")
+
     plt.figure()
     sns.scatterplot(data=agg_df, x=x_col, y=y_col).set_title(session_name)
 
 
 # plt.ion()
 calibration_data_dir = os.path.join(os.getcwd(), "calibration_data/")
-session_names = glob.glob("20240201-21*", root_dir=calibration_data_dir)
+session_names = glob.glob("20240207-*", root_dir=calibration_data_dir)
 
 # criteria_list = {'20240131-193321': ("Bbox Center Y", False, 800),
 #                  '20240131-195237': ("Bbox Center X", True, 800),
@@ -162,10 +180,18 @@ session_names = glob.glob("20240201-21*", root_dir=calibration_data_dir)
 #                  '20240201-192719': ("Bbox Center X", True, 0),
 #                  }
 
-criteria_list = {'20240201-213457': ("Bbox Center X", True, 500),
-                 '20240201-211913': ("Bbox Center X", True, 600),
-                 '20240201-214159': ("Bbox Center X", False, 940),
-                 '20240201-212858': ("Bbox Center X", True, 0)
+# criteria_list = {'20240201-213457': ("Bbox Center X", True, 500),
+#                  '20240201-211913': ("Bbox Center X", True, 600),
+#                  '20240201-214159': ("Bbox Center X", False, 940),
+#                  '20240201-212858': ("Bbox Center X", True, 0)
+#                  }
+
+criteria_list = {'20240207-184354': ("Bbox Center X", True, 600),
+                 '20240207-184702': ("Bbox Center X", True, 1200),
+                 '20240207-185019': ("Bbox Center X", True, 350),
+                 '20240207-185240': ("Bbox Center X", True, 0),
+                 '20240207-185508': ("Bbox Center X", True, 800),
+                 '20240207-185717': ("Bbox Center X", True, 1500),
                  }
 
 ## OK, leaving a note here on the hacked together process for cleaning data before I forget or move on
@@ -179,10 +205,11 @@ criteria_list = {'20240201-213457': ("Bbox Center X", True, 500),
 # 6. Should have cleaned data with 35_Yaw_cleaned_ prefix now. Can be used for training. 35 refers to the angular band,
 #    in degrees, that will be filtered out
 # Note: This assumes each session has a person standing in one place, staring at a specific dot.
+#       Use Bbox X-Y with aggregate data, Yaw-Pitch is useful to gauge by session how much spread exists
 
-clean_prefix = "35_Yaw_cleaned_"
-clean_data = False
-plot_session = True
+clean_prefix = "cleaned_"
+clean_data = True
+plot_session = False
 plot_aggregate = False
 plot_options = {"Bbox X-Y": [("Bbox Center X", "Bbox Center Y"), [(0, 1920), (0, 1200)]],
                 "Yaw-Pitch": [("Yaw", "Pitch"), [(-180, 180), (-180, 180)]]}

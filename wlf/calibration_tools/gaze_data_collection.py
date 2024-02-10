@@ -69,7 +69,10 @@ class GazeDataCollection:
         self.gaze_data = np.zeros((50, 10), dtype=np.float32)
         self.capture_data = False
         self.capture_idx = 0
-        self.label = Point2D(x=0, y=0)
+        #[JSK] Modifying this to just capture a few sets that are in the bottom left quadrant
+        self.min_x = 2
+        self.min_y = 1
+        self.label = Point2D(x=self.min_x, y=self.min_y)
         timestr = time.strftime("%Y%m%d-%H%M%S")
         calibration_data_path = os.path.join(os.getcwd(), 'calibration_data')
         Path(f"./{calibration_data_path}").mkdir(exist_ok=True)
@@ -120,6 +123,7 @@ class GazeDataCollection:
         cv2.namedWindow(self.gaze_target, cv2.WINDOW_NORMAL)
         cv2.setWindowProperty(self.gaze_target, cv2.WND_PROP_FULLSCREEN, cv2.WINDOW_FULLSCREEN)
         x, y, w, h = cv2.getWindowImageRect(self.gaze_target)
+        print(f"Gaze target window specs - w: {w}, h: {h}, x: {x}, y: {y}")
         self.window_x = x
         self.window_y = y
         self.window_w = w
@@ -199,7 +203,7 @@ class GazeDataCollection:
                                     np.save(f, self.gaze_data)
                                 self.canvas_img[:, :, :] = 1
                                 if self.label.x == 3:
-                                    self.label.x = 0
+                                    self.label.x = self.min_x
                                     self.label.y += 1
                                 else:
                                     self.label.x += 1

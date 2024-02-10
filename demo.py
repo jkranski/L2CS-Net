@@ -41,10 +41,14 @@ def parse_args():
     parser.add_argument(
         '--training_timestr', dest='training_timestr', help='Timestring for training time of projection mapping model '
                                                             'and scalar',
-        default="20240201-221238", type=str)
+        default="20240209-180305", type=str)
+    # default = "20240201-221238", type = str)
+
     parser.add_argument(
         '--data_timestr', dest='data_timestr', help='Timestring for data collection',
         default="20240131", type=str)
+
+    # default="20240131", type=str)
     parser.add_argument(
         '--cam', dest='cam_id', help='Camera device id to use [0]',
         default=1, type=int)
