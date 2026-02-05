@@ -63,11 +63,11 @@ if __name__ == '__main__':
     sender = GazeSender(redis_client)
     with torch.no_grad():
         while True:
-            success, frame = cap.read()
-            start_fps = time.time()
-            frame = cv2.flip(frame, 1)
-
             try:
+                success, frame = cap.read()
+                start_fps = time.time()
+                frame = cv2.flip(frame, 1)
+
                 faces = detector(frame)
             except Exception as e:
                 print(f"Error occurred while detecting faces: {e}")
