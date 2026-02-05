@@ -71,6 +71,11 @@ if __name__ == '__main__':
                 faces = detector(frame)
             except Exception as e:
                 print(f"Error occurred while detecting faces: {e}")
+                print("Restarting camera...")
+                cap.release()
+                cap = cv2.VideoCapture(cam)
+                cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
+                cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
                 continue
 
             if faces is not None:
