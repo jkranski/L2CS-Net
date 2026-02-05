@@ -50,13 +50,13 @@ if __name__ == '__main__':
     cap = cv2.VideoCapture(cam)
     cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
     cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
-    
+
     detector = RetinaFace(device=gpu)
 
     # Check if the webcam is opened correctly
     if not cap.isOpened():
         raise IOError("Cannot open webcam")
-    
+
     x = 0
 
     redis_client = redis.Redis()
@@ -67,7 +67,12 @@ if __name__ == '__main__':
             start_fps = time.time()
             frame = cv2.flip(frame, 1)
 
-            faces = detector(frame)
+            try:
+                faces = detector(frame)
+            except Exception as e:
+                print(f"Error occurred while detecting faces: {e}")
+                continue
+
             if faces is not None:
                 net_faces: list[Face] = []
                 for box, landmarks, score in faces:
@@ -91,7 +96,7 @@ if __name__ == '__main__':
                     img = cv2.resize(img, (224, 224))
                     img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
                     im_pil = Image.fromarray(img)
-                    
+
                     cv2.rectangle(frame, (x_min, y_min),
                                   (x_max, y_max), (0, 255, 0), 1)
 
@@ -107,7 +112,7 @@ if __name__ == '__main__':
                     net_faces.append(net_face)
 
                 sender.send(GazeData(faces=net_faces))
-            
+
             myFPS = 1.0 / (time.time() - start_fps)
             cv2.putText(frame, 'FPS: {:.1f}'.format(
                 myFPS), (10, 20), cv2.FONT_HERSHEY_COMPLEX_SMALL, 1, (0, 255, 0), 1, cv2.LINE_AA)
